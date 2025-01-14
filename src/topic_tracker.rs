@@ -182,7 +182,7 @@ impl TopicTracker {
 
     pub async fn memory_footprint(&self) -> usize {
         let _kv = self.kv.lock().await;
-        size_of_val(&_kv)
+        size_of_val(&*_kv)
     }
 }
 
