@@ -2,6 +2,13 @@
 name = "iroh-topic-tracker"
 version = "0.1.0"
 edition = "2021"
+authors = ["Zacharias Boehler <rustonbsd@mailfence.com>"]
+description = "Iroh universal (gossipsub) topic tracker."
+license = "MIT"
+repository = "https://github.com/rustonbsd/iroh-topic-tracker"
+readme = "README.md"
+keywords = ["gossipsub", "iroh", "p2p", "pubsub", "rust", "networking", "tracker"] # Optional, helps with discoverability
+categories = ["network-programming::p2p", "network-programming::protocols"]
 
 [dependencies]
 iroh = "0.30"
