@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use iroh::{Endpoint, SecretKey};
+use iroh_gossip::proto::TopicId;
 use iroh_topic_tracker::topic_tracker::{Topic, TopicTracker};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let topic = Topic::from_passphrase("my test topic");
+    let _topic_id: TopicId = topic.clone().into();
     let secret_key =  SecretKey::generate(rand::rngs::OsRng);
     
     let endpoint = Endpoint::builder()
