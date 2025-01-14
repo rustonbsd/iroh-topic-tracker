@@ -1,26 +1,37 @@
 # Iroh Topic Tracker
-**Tracker** for Iroh NodeId's in **GossipSub** Topics made easy. The lib comes with a hosted iroh-topic-tracker **BOOTSTRAP_NODE**.
 
-## Try it
+[![Crates.io](https://img.shields.io/crates/v/iroh-topic-tracker.svg)](https://crates.io/crates/iroh-topic-tracker)
+[![Docs.rs](https://docs.rs/iroh-topic-tracker/badge.svg)](https://docs.rs/iroh-topic-tracker)
 
-Get the last connected NodeId's for a given gossip topic.
+**An easy-to-use tracker for Iroh NodeId's in GossipSub topics.** This library includes a hosted iroh-topic-tracker **BOOTSTRAP_NODE** to facilitate seamless tracking.
 
+## Getting Started
+
+### Try It Out
+
+1. **Get the last connected NodeId's for a given gossip topic:**
+    ```bash
     cargo run --example client
+    ```
 
-Run your own dedicated topic tracker node. 
-
+2. **Run your own dedicated topic tracker node:**
+    ```bash
     cargo run --example server
+    ```
+   *(Note: Adjust the `secret.rs` SecretKey to ensure secure communication and update the `BOOTSTRAP_NODES` public key in `topic_tracker.rs` (line ~33) to correctly point to the desired bootstrap node for discovery.)*
 
-(adjust the secret.rs SecretKey and change the BOOTSTRAP_NODES public key in topic_tracker.rs (line ~33) -> impl TopicTracker)
+### Build Server for Release
 
-## Build server for release
+To build the server in release mode:
+```bash
+cargo build --release --example server
+```
 
-    cargo build --release --example server
+## Library Usage
 
-## Lib usage
-See examples but tldr:
+Refer to the examples below for quick guidance:
 
-### Example Minimal
+### Basic Example
 ```rust
 use iroh_topic_tracker::topic_tracker::TopicTracker;
 
@@ -30,7 +41,7 @@ let topic_tracker = TopicTracker::new(&endpoint);
 topic_tracker.get_topic_nodes(&topic).await?;
 ```
 
-### Example Minimally more
+### Expanded Example
 ```rust
 use iroh_topic_tracker::topic_tracker::TopicTracker;
 
@@ -47,5 +58,7 @@ let router = Router::builder(endpoint.clone())
     .accept(TopicTracker::ALPN, topic_tracker.clone())
     .spawn()
     .await?;
+
 topic_tracker.get_topic_nodes(&topic).await?;
 ```
+
