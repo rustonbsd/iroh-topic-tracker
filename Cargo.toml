@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/rustonbsd/iroh-topic-tracker"
 readme = "README.md"
 keywords = ["gossipsub", "iroh", "pubsub", "networking", "tracker"]
-categories = ["network-programming::p2p", "network-programming::protocols"]
+categories = ["network-programming"]
 
 [dependencies]
 iroh = "0.30"
