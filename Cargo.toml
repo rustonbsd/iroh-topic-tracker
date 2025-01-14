@@ -7,7 +7,7 @@ description = "Iroh universal (gossipsub) topic tracker."
 license = "MIT"
 repository = "https://github.com/rustonbsd/iroh-topic-tracker"
 readme = "README.md"
-keywords = ["gossipsub", "iroh", "p2p", "pubsub", "rust", "networking", "tracker"]
+keywords = ["gossipsub", "iroh", "pubsub", "networking", "tracker"]
 categories = ["network-programming::p2p", "network-programming::protocols"]
 
 [dependencies]
