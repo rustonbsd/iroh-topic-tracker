@@ -1,5 +1,5 @@
 # Iroh Topic Tracker
-**Tracker** for Iroh NodeId's in **GossipSub** Topics** made easy. The lib comes with a hosted iroh-topic-tracker **BOOTSTRAP_NODE** (configured in topic_tracker::TopicTracker).
+**Tracker** for Iroh NodeId's in **GossipSub** Topics made easy. The lib comes with a hosted iroh-topic-tracker **BOOTSTRAP_NODE**.
 
 ## Try it
 
