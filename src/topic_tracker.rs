@@ -6,6 +6,7 @@ use iroh::{
     protocol::ProtocolHandler,
     Endpoint, NodeAddr, NodeId, SecretKey,
 };
+use iroh_gossip::proto::TopicId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
@@ -182,7 +183,8 @@ impl TopicTracker {
 
     pub async fn memory_footprint(&self) -> usize {
         let _kv = self.kv.lock().await;
-        size_of_val(&*_kv)
+        let val = &*_kv;
+        size_of_val(val)
     }
 }
 
@@ -233,5 +235,17 @@ impl ProtocolHandler for TopicTracker {
 
             Ok(())
         })
+    }
+}
+
+impl Into<iroh_gossip::proto::TopicId> for Topic {
+    fn into(self) -> iroh_gossip::proto::TopicId {
+        TopicId::from_bytes(self.0)
+    }
+}
+
+impl From<iroh_gossip::proto::TopicId> for Topic {
+    fn from(value: iroh_gossip::proto::TopicId) -> Self {
+        Self { 0: *value.as_bytes() }
     }
 }
