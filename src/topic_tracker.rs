@@ -238,12 +238,14 @@ impl ProtocolHandler for TopicTracker {
     }
 }
 
+#[cfg(feature="iroh-gossip-cast")]
 impl Into<iroh_gossip::proto::TopicId> for Topic {
     fn into(self) -> iroh_gossip::proto::TopicId {
         TopicId::from_bytes(self.0)
     }
 }
 
+#[cfg(feature="iroh-gossip-cast")]
 impl From<iroh_gossip::proto::TopicId> for Topic {
     fn from(value: iroh_gossip::proto::TopicId) -> Self {
         Self { 0: *value.as_bytes() }
