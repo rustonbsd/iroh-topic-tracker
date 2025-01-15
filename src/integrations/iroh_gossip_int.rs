@@ -15,6 +15,17 @@ pub struct GossipAutoDiscovery {
     topic_tracker: Arc<TopicTracker>,
 }
 
+pub trait AutoDiscoveryNew {
+    #[allow(async_fn_in_trait)]
+    async fn new(endpoint: Endpoint) -> Result<GossipAutoDiscovery>;
+}
+
+impl AutoDiscoveryNew for Gossip {
+    async fn new(endpoint: Endpoint) -> Result<GossipAutoDiscovery> {
+        Gossip::builder().spawn_with_auto_discovery(endpoint).await
+    }
+}
+
 pub trait AutoDiscoveryBuilder {
     #[allow(async_fn_in_trait)]
     async fn spawn_with_auto_discovery(self, endpoint: Endpoint) -> Result<GossipAutoDiscovery>;
@@ -44,7 +55,7 @@ impl AutoDiscoveryGossip for GossipAutoDiscovery {
             .clone()
             .get_topic_nodes(&topic_id.into())
             .await?;
-        
+
         self.gossip.subscribe_and_join(topic_id, node_ids).await
     }
 }
