@@ -1,6 +1,6 @@
 [package]
 name = "iroh-topic-tracker"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Zacharias Boehler <rustonbsd@mailfence.com>"]
 description = "Iroh universal (gossipsub) topic tracker."
@@ -28,7 +28,7 @@ sha2 = "0.10"
 iroh-gossip = { version = "0.31.0", optional = true }
 
 [features]
-default = ["iroh-gossip-cast"]
+default = ["iroh-gossip-cast","iroh-gossip-auto-discovery"]
 iroh-gossip-cast = ["iroh-gossip"]
 iroh-gossip-auto-discovery = ["iroh-gossip","iroh-gossip-cast"]
 

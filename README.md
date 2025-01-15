@@ -15,9 +15,13 @@ This crate comes with an [iroh-gossip](https://crates.io/crates/iroh-gossip) int
 ```feature = ["iroh-gossip-auto-discovery"]```
 
 ```rust
+use iroh_topic_tracker::integrations::iroh_gossip::*;
+
 let endpoint = Endpoint::builder().bind().await?;
 
-// Spawn with auto discovery
+// Setup Gossip with auto discovery
+let gossip = Gossip::new(endpoint.clone()).await?;
+// ::new() or ::builder().spawn_with_auto_discovery()
 let gossip = Gossip::builder()
     .spawn_with_auto_discovery(endpoint.clone())
     .await?;
@@ -26,9 +30,10 @@ let router = iroh::protocol::Router::builder(endpoint.clone())
     .accept(iroh_gossip::ALPN, gossip.gossip.clone())
     .spawn().await?;
 
+// Gossip Topic
 let topic = Topic::from_passphrase("my-iroh-gossip-topic");
 
-// Subscribe and join with automatic bootstrapping
+// Subscribe and join with automatic peer discovery
 let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
 ```
 

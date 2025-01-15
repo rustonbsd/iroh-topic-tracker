@@ -5,10 +5,10 @@ use iroh_gossip::net::{Event, Gossip, GossipEvent};
 use iroh_topic_tracker::topic_tracker::Topic;
 
 // Import optional feature to work with iroh-gossip
-// new functions    spawn_with_auto_discovery
-// and              subscribe_and_join_with_auto_discovery
-use iroh_topic_tracker::integrations::AutoDiscoveryBuilder;
-use iroh_topic_tracker::integrations::AutoDiscoveryGossip;
+// new:         new
+// builder:     spawn_with_auto_discovery
+// subscribe:   subscribe_and_join_with_auto_discovery
+use iroh_topic_tracker::integrations::iroh_gossip::*;
 
 #[cfg(feature="iroh-gossip-auto-discovery")]
 #[tokio::main]
@@ -25,6 +25,9 @@ async fn main() -> Result<()> {
     let gossip = Gossip::builder()
         .spawn_with_auto_discovery(endpoint.clone())
         .await?;
+
+    //let gossip = Gossip::new(endpoint.clone()).await?;
+
     let _router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.gossip.clone())
         .spawn()
