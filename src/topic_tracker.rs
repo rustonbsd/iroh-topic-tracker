@@ -188,7 +188,7 @@ impl TopicTracker {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Topic([u8; 32]);
 
 impl Topic {
