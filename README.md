@@ -1,102 +1,116 @@
-# Iroh Topic Tracker
+# iroh-topic-tracker
 
 [![Crates.io](https://img.shields.io/crates/v/iroh-topic-tracker.svg)](https://crates.io/crates/iroh-topic-tracker)
 [![Docs.rs](https://docs.rs/iroh-topic-tracker/badge.svg)](https://docs.rs/iroh-topic-tracker)
 
-**An easy-to-use tracker for Iroh NodeId's in GossipSub topics.** This library includes a hosted `iroh-topic-tracker` **BOOTSTRAP_NODE** to facilitate seamless tracking.
+**A tracker for Iroh NodeId's in GossipSub topics.**  
+This library integrates with [`iroh-gossip`](https://crates.io/crates/iroh-gossip) to automate peer discovery and includes a hosted `BOOTSTRAP_NODE` for seamless topic tracking without you needing to host anything. Your peers can discover each other even if both are behind NATs.
+
+---
+
+## Overview
+
+The crate provides a [`TopicTracker`](https://docs.rs/iroh-topic-tracker/latest/iroh_topic_tracker/topic_tracker/struct.TopicTracker.html) to manage and discover peers participating in shared GossipSub topics. It leverages Iroh's direct connectivity and [`Router`](https://docs.rs/iroh/latest/iroh/protocol/struct.Router.html) to handle protocol routing.
+
+### Features
+- Automatic peer discovery via `iroh-gossip` (enabled with `iroh-gossip-auto-discovery` feature).
+- Dedicated bootstrap node support for topic tracking.
+- Simple API to fetch active peers for a topic.
 
 ---
 
 ## Getting Started
 
-### Automatic Discovery with iroh-gossip
+### Prerequisites
+Add the crate to your `Cargo.toml` with the required features:
+```toml
+[dependencies]
+iroh-topic-tracker = { version = "0.1", features = ["iroh-gossip-auto-discovery"] }
+```
 
-This crate comes with an [iroh-gossip](https://crates.io/crates/iroh-gossip) integration, available via the feature flag:
-```feature = ["iroh-gossip-auto-discovery"]```
+### Basic Setup with Iroh
+```rust
+use iroh::{protocol::Router, Endpoint};
+use iroh_topic_tracker::topic_tracker::{ALPN, TopicTracker};
 
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Configure Iroh endpoint with discovery
+    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
+
+    // Initialize topic tracker
+    let topic_tracker = TopicTracker::new(&endpoint);
+
+    // Attach to Iroh router
+    let router = Router::builder(endpoint.clone())
+        .accept(ALPN, topic_tracker.clone())
+        .spawn()
+        .await?;
+
+    // Track peers in a topic
+    let topic = iroh_gossip::Topic::from_passphrase("my-secret-topic");
+    let peers = topic_tracker.get_topic_nodes(&topic).await?;
+    
+    Ok(())
+}
+```
+
+### Automatic Discovery
+Enable `iroh-gossip` integration to automate peer discovery for topics:
 ```rust
 use iroh_topic_tracker::integrations::iroh_gossip::*;
 
 let endpoint = Endpoint::builder().bind().await?;
 
-// Setup Gossip with auto discovery
-let gossip = Gossip::new(endpoint.clone()).await?;
-// ::new() or ::builder().spawn_with_auto_discovery()
+// Configure gossip protocol with auto-discovery
 let gossip = Gossip::builder()
     .spawn_with_auto_discovery(endpoint.clone())
     .await?;
 
-let router = iroh::protocol::Router::builder(endpoint.clone())
-    .accept(iroh_gossip::ALPN, gossip.gossip.clone())
-    .spawn().await?;
-
-// Gossip Topic
+// Join a topic and start tracking
 let topic = Topic::from_passphrase("my-iroh-gossip-topic");
-
-// Subscribe and join with automatic peer discovery
 let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
 ```
 
 ---
 
-### Try It Out
+## Examples
 
-1. **Get the last connected NodeId's for a given gossip topic:**
-    ```bash
-    cargo run --example client
-    ```
+### Run a Topic Tracker Node
+Start a dedicated tracker node:
+```bash
+cargo run --example server
+```
+*Note: Update `secret.rs` with your `SecretKey` and configure `BOOTSTRAP_NODES` in `topic_tracker.rs` for secure communication.*
 
-2. **Run your own dedicated topic tracker node:**
-    ```bash
-    cargo run --example server
-    ```
-   *Note: Adjust the `secret.rs` SecretKey to ensure secure communication, and update the `BOOTSTRAP_NODES` public key in `topic_tracker.rs` (around line 33) to correctly point to the desired bootstrap node for discovery.*
+### Query Active Peers
+Fetch the latest NodeIds for a topic:
+```bash
+cargo run --example client
+```
 
 ---
 
-### Build Server for Release
+## Building
 
-To build the server in release mode:
+Optimized release build for the tracker server:
 ```bash
 cargo build --release --example server
 ```
 
 ---
 
-## Library Usage
+## License
 
-Refer to the examples below for quick guidance:
+This project is licensed under either of
 
-### Basic Example
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
 
-```rust
-use iroh_topic_tracker::topic_tracker::TopicTracker;
+at your option.
 
-let topic = Topic::from_passphrase("my topic name");
-let topic_tracker = TopicTracker::new(&endpoint);
+### Contribution
 
-topic_tracker.get_topic_nodes(&topic).await?;
-```
-
-### Expanded Example
-
-```rust
-use iroh_topic_tracker::topic_tracker::TopicTracker;
-
-let topic = Topic::from_passphrase("my test topic");
-let endpoint = Endpoint::builder()
-    .secret_key(SecretKey::generate(rand::rngs::OsRng))
-    .discovery_n0()
-    .discovery_dht()
-    .bind()
-    .await?;
-
-let topic_tracker = TopicTracker::new(&endpoint);
-let router = Router::builder(endpoint.clone())
-    .accept(TopicTracker::ALPN, topic_tracker.clone())
-    .spawn()
-    .await?;
-
-topic_tracker.get_topic_nodes(&topic).await?;
-```
-
+Unless explicitly stated, any contribution intentionally submitted for inclusion in this project shall be dual-licensed as above, without any additional terms or conditions.
