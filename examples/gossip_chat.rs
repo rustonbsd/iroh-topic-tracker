@@ -4,17 +4,16 @@ use iroh::{Endpoint, SecretKey};
 use iroh_gossip::net::{Event, Gossip, GossipEvent};
 use iroh_topic_tracker::topic_tracker::Topic;
 
-// Import optional feature to work with iroh-gossip
-// new:         new
-// builder:     spawn_with_auto_discovery
-// subscribe:   subscribe_and_join_with_auto_discovery
+// Import optional feature for iroh-gossip integration
 use iroh_topic_tracker::integrations::iroh_gossip::*;
 
 #[cfg(feature="iroh-gossip-auto-discovery")]
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Generate a new random secret key
     let secret_key = SecretKey::generate(rand::rngs::OsRng);
 
+    // Set up endpoint with discovery enabled
     let endpoint = Endpoint::builder()
         .secret_key(secret_key)
         .discovery_n0()
@@ -22,21 +21,24 @@ async fn main() -> Result<()> {
         .bind()
         .await?;
 
+    // Initialize gossip with auto-discovery
     let gossip = Gossip::builder()
         .spawn_with_auto_discovery(endpoint.clone())
         .await?;
 
-    //let gossip = Gossip::new(endpoint.clone()).await?;
-
+    // Set up protocol router
     let _router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.gossip.clone())
         .spawn()
         .await?;
 
+    // Create topic from passphrase
     let topic = Topic::from_passphrase("my-iroh-gossip-topic");
 
+    // Split into sink (sending) and stream (receiving) 
     let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
 
+    // Spawn listener for incoming messages
     tokio::spawn(async move {
         while let Some(event) = stream.next().await {
             if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
@@ -53,6 +55,7 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Main input loop for sending messages
     let mut buffer = String::new();
     let stdin = std::io::stdin();
     loop {

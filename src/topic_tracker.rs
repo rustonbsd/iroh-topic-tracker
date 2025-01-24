@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::utils::wait_for_relay;
 
+/// Tracks topics and associated nodes in a distributed system
 #[derive(Debug, Clone)]
 pub struct TopicTracker {
     pub node_id: NodeId,
@@ -20,10 +21,14 @@ pub struct TopicTracker {
     kv: Arc<Mutex<HashMap<[u8; 32], Vec<NodeId>>>>,
 }
 
+/// Protocol messages for topic tracking communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum Protocol {
+    /// Request for topic information with node ID
     TopicRequest((Topic, NodeId)),
+    /// Response containing list of node IDs
     TopicList(Vec<NodeId>),
+    /// Signal completion of exchange
     Done,
 }
 
@@ -34,6 +39,10 @@ impl TopicTracker {
     pub const BOOTSTRAP_NODES: &str =
         "abcdef4df4d74587095d071406c2a8462bde5079cbbc0c50051b9b2e84d67691";
 
+    /// Creates a new TopicTracker instance
+    /// 
+    /// # Arguments
+    /// * `endpoint` - The network endpoint to use
     pub fn new(endpoint: &Endpoint) -> Self {
         let me = Self {
             endpoint: endpoint.clone(),
@@ -65,6 +74,11 @@ impl TopicTracker {
         me
     }
 
+    /// Sends a protocol message over the stream
+    /// 
+    /// # Arguments
+    /// * `msg` - The protocol message to send
+    /// * `send` - The send stream to write to
     async fn send_msg(msg: Protocol, send: &mut SendStream) -> Result<()> {
         let encoded = postcard::to_stdvec(&msg)?;
         send.write_all(&(encoded.len() as u64).to_le_bytes())
@@ -73,6 +87,10 @@ impl TopicTracker {
         Ok(())
     }
 
+    /// Receives a protocol message from the stream
+    ///
+    /// # Arguments  
+    /// * `recv` - The receive stream to read from
     async fn recv_msg(recv: &mut RecvStream) -> Result<Protocol> {
         let mut incoming_len = [0u8; 8];
         recv.read_exact(&mut incoming_len).await?;
@@ -84,6 +102,10 @@ impl TopicTracker {
         Ok(msg)
     }
 
+    /// Gets nodes associated with a topic
+    ///
+    /// # Arguments
+    /// * `topic` - The topic to get nodes for
     pub async fn get_topic_nodes(self: Arc<Self>, topic: &Topic) -> Result<Vec<NodeId>> {
         wait_for_relay(&self.endpoint).await?;
 
@@ -131,8 +153,11 @@ impl TopicTracker {
         back
     }
 
+    /// Accepts an incoming connection
+    ///
+    /// # Arguments
+    /// * `conn` - The incoming connection
     async fn accept(&self, conn: Connecting) -> Result<()> {
-
         let (mut send, mut recv) = conn.await?.accept_bi().await?;
         let msg = Self::recv_msg(&mut recv).await?;
 
@@ -181,6 +206,7 @@ impl TopicTracker {
         Ok(())
     }
 
+    /// Gets the memory usage of the key-value store
     pub async fn memory_footprint(&self) -> usize {
         let _kv = self.kv.lock().await;
         let val = &*_kv;
@@ -188,18 +214,22 @@ impl TopicTracker {
     }
 }
 
+/// A topic identifier
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Topic([u8; 32]);
 
 impl Topic {
+    /// Creates a new Topic from raw bytes
     pub fn new(topic: [u8; 32]) -> Self {
         Self(topic)
     }
 
+    /// Creates a Topic by hashing a passphrase
     pub fn from_passphrase(phrase: &str) -> Self {
         Self(Self::hash(phrase))
     }
 
+    /// Hashes a string into topic bytes
     fn hash(s: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(s);
@@ -208,12 +238,14 @@ impl Topic {
         buf
     }
 
+    /// Converts topic to string representation
     pub fn to_string(&self) -> String {
         z32::encode(&self.0)
     }
 
+    /// Converts topic bytes to a secret key
     pub fn to_secret_key(&self) -> SecretKey {
-        SecretKey::from_bytes(&self.0.clone())
+        SecretKey::from_bytes(&self.0.clone()) 
     }
 }
 
@@ -232,7 +264,6 @@ impl ProtocolHandler for TopicTracker {
 
         Box::pin(async move {
             topic_tracker.accept(conn).await?;
-
             Ok(())
         })
     }

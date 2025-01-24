@@ -28,6 +28,41 @@ Add the crate to your `Cargo.toml` with the required features:
 iroh-topic-tracker = { version = "0.1", features = ["iroh-gossip-auto-discovery"] }
 ```
 
+### Automatic Discovery
+Enable `iroh-gossip` integration to automate peer discovery for topics:
+```rust
+use iroh_topic_tracker::integrations::iroh_gossip::*;
+
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Configure Iroh endpoint with discovery
+    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
+
+    // Configure gossip protocol with auto-discovery
+    let gossip = Gossip::builder()
+        .spawn_with_auto_discovery(endpoint.clone())
+        .await?;
+
+    // Join a topic and start tracking
+    let topic = Topic::from_passphrase("my-iroh-gossip-topic");
+    let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
+
+    // Read from stream ..
+    while let Some(event) = stream.next().await {
+        if let Ok(Event::Gossip(GossipEvent::Received(msg: Message))) = event {
+            
+            // Do something with msg...
+            let msg_text = String::from_utf8(msg.content.to_vec()).unwrap();
+
+        }
+    }
+
+    // .. or Send to Sink
+    sink.broadcast("my msg goes here".into()).await.unwrap();
+}
+```
+
 ### Basic Setup with Iroh
 ```rust
 use iroh::{protocol::Router, Endpoint};
@@ -55,22 +90,6 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### Automatic Discovery
-Enable `iroh-gossip` integration to automate peer discovery for topics:
-```rust
-use iroh_topic_tracker::integrations::iroh_gossip::*;
-
-let endpoint = Endpoint::builder().bind().await?;
-
-// Configure gossip protocol with auto-discovery
-let gossip = Gossip::builder()
-    .spawn_with_auto_discovery(endpoint.clone())
-    .await?;
-
-// Join a topic and start tracking
-let topic = Topic::from_passphrase("my-iroh-gossip-topic");
-let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
-```
 
 ---
 
