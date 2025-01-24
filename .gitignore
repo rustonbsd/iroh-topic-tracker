@@ -21,3 +21,4 @@ Cargo.lock
 #.idea/
 
 src/secret.rs
+.DS_Store
