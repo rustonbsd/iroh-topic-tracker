@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use iroh::Endpoint;
@@ -6,6 +6,7 @@ use iroh_gossip::{
     net::{Builder, Gossip, GossipTopic},
     proto::TopicId,
 };
+use tokio::time::sleep;
 
 use crate::topic_tracker::TopicTracker;
 
@@ -108,12 +109,20 @@ impl AutoDiscoveryGossip for GossipAutoDiscovery {
     ///
     /// A Result containing the GossipTopic
     async fn subscribe_and_join(&self, topic_id: TopicId) -> Result<GossipTopic> {
-        let node_ids = self
-            .topic_tracker
-            .clone()
-            .get_topic_nodes(&topic_id.into())
-            .await?;
-
-        self.gossip.subscribe_and_join(topic_id, node_ids).await
+        let mut backoff_timer = 1 as u64;
+        loop {
+            let node_ids = self
+                .topic_tracker
+                .clone()
+                .get_topic_nodes(&topic_id.into())
+                .await?;
+            let node_ids_cap = node_ids.as_slice().to_vec();
+            if node_ids_cap.is_empty() {
+               sleep(Duration::from_secs(backoff_timer)).await;
+               backoff_timer += 1;
+               continue;
+            }
+            return self.gossip.subscribe_and_join(topic_id, node_ids_cap.clone().into()).await;
+        }
     }
 }

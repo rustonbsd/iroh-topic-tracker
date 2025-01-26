@@ -9,7 +9,7 @@ use iroh::{
 use iroh_gossip::proto::TopicId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::sync::Mutex;
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
 
 use crate::utils::wait_for_relay;
 
@@ -33,6 +33,7 @@ impl TopicTracker {
     pub const MAX_NODE_IDS_PER_TOPIC: usize = 100;
     pub const BOOTSTRAP_NODES: &str =
         "abcdef4df4d74587095d071406c2a8462bde5079cbbc0c50051b9b2e84d67691";
+    pub const MAX_MSG_SIZE_BYTES: u64 = 1024*1024;
 
     pub fn new(endpoint: &Endpoint) -> Self {
         let me = Self {
@@ -40,9 +41,12 @@ impl TopicTracker {
             node_id: endpoint.node_id(),
             kv: Arc::new(Mutex::new(HashMap::new())),
         };
+        me
+    }
 
+    pub async fn spawn_optional(self) -> Result<Self> {
         tokio::spawn({
-            let me2 = me.clone();
+            let me2 = self.clone();
             async move {
                 while let Some(connecting) = me2.clone().endpoint.accept().await {
                     match connecting.accept() {
@@ -61,22 +65,22 @@ impl TopicTracker {
                 }
             }
         });
-
-        me
+        Ok(self)
     }
 
     async fn send_msg(msg: Protocol, send: &mut SendStream) -> Result<()> {
         let encoded = postcard::to_stdvec(&msg)?;
-        send.write_all(&(encoded.len() as u64).to_le_bytes())
-            .await?;
-        send.write_all(&encoded).await?;
+        assert!(encoded.len() <= Self::MAX_MSG_SIZE_BYTES as usize);
+
+        send.write_u64_le(encoded.len() as u64).await?;
+        send.write(&encoded).await?;
         Ok(())
     }
 
     async fn recv_msg(recv: &mut RecvStream) -> Result<Protocol> {
-        let mut incoming_len = [0u8; 8];
-        recv.read_exact(&mut incoming_len).await?;
-        let len = u64::from_le_bytes(incoming_len);
+        let len = recv.read_u64_le().await?;
+        
+        assert!(len <= Self::MAX_MSG_SIZE_BYTES);
 
         let mut buffer = vec![0u8; len as usize];
         recv.read_exact(&mut buffer).await?;
@@ -125,9 +129,8 @@ impl TopicTracker {
             }
             _ => bail!("illegal message received"),
         };
-
+        
         Self::send_msg(Protocol::Done, &mut send).await?;
-        send.finish()?;
         back
     }
 
