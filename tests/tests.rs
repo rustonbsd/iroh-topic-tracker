@@ -41,3 +41,33 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+
+#[tokio::test]
+async fn test_topic_lifecycle() -> anyhow::Result<()> {
+    // Test topic creation and conversion
+    let topic = Topic::new(OsRng.gen::<[u8; 32]>());
+    
+    // Create endpoint and topic tracker
+    let endpoint = Endpoint::builder()
+        .discovery_n0()
+        .bind()
+        .await?;
+    
+    let topic_tracker = Arc::new(TopicTracker::new(&endpoint));
+    
+    // Test getting nodes for a topic (should be empty initially)
+    let nodes = topic_tracker.clone().get_topic_nodes(&topic).await?;
+    assert!(nodes.is_empty());
+    
+    // Test topic string representation
+    let topic_str = nodes[0].to_string();
+    assert!(!topic_str.is_empty());
+    
+    // Test conversion to/from iroh_gossip::proto::TopicId
+    let topic_id: iroh_gossip::proto::TopicId = topic.clone().into();
+    let topic_back: Topic = topic_id.into();
+    assert_eq!(topic, topic_back.into());
+
+    Ok(())
+}

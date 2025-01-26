@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         .await?;
     
     // Initialize topic tracker and wrap in Arc for sharing
-    let topic_tracker = Arc::new(TopicTracker::new(&endpoint));
+    let topic_tracker = Arc::new(TopicTracker::new(&endpoint).spawn_optional().await?);
 
     // Set up router to handle topic tracking protocol
     let _router = iroh::protocol::Router::builder(endpoint.clone())
