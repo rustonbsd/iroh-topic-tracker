@@ -15,7 +15,7 @@ async fn e2e_gossip_autodiscovery_test() -> anyhow::Result<()> {
     let topic = Topic::new(OsRng.gen::<[u8; 32]>());
 
     // Create endpoint0 with nodeid0 and topic_tracker0
-    let addr0 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 9001);
+    let addr0 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
     let endpoint0 = Endpoint::builder()
         .discovery_n0()
         .bind_addr_v4(addr0)
@@ -33,7 +33,7 @@ async fn e2e_gossip_autodiscovery_test() -> anyhow::Result<()> {
 
 
     // Create endpoint1 with nodeid1 and topic_tracker1
-    let addr1 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 9002);
+    let addr1 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
     let endpoint1 = Endpoint::builder()
         .discovery_n0()
         .secret_key(SecretKey::generate(rand::rngs::OsRng))
