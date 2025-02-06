@@ -11,6 +11,7 @@ use iroh_topic_tracker::integrations::iroh_gossip::*;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Generate a new random secret key
+
     let secret_key = SecretKey::generate(rand::rngs::OsRng);
 
     // Set up endpoint with discovery enabled
@@ -20,6 +21,7 @@ async fn main() -> Result<()> {
         .discovery_dht()
         .bind()
         .await?;
+
 
     // Initialize gossip with auto-discovery
     let gossip = Gossip::builder()

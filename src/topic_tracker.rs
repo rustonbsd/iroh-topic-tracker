@@ -88,7 +88,7 @@ impl TopicTracker {
         Ok(msg)
     }
 
-    pub async fn get_topic_nodes(self: Arc<Self>, topic: &Topic) -> Result<Vec<NodeId>> {
+    pub async fn get_topic_nodes(self: Self, topic: &Topic) -> Result<Vec<NodeId>> {
         wait_for_relay(&self.endpoint).await?;
 
         let conn = self

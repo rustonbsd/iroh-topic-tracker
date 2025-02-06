@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use iroh::{Endpoint, SecretKey};
 use iroh_gossip::proto::TopicId;
@@ -23,7 +21,7 @@ async fn main() -> Result<()> {
         .await?;
     
     // Create a shared topic tracker instance
-    let topic_tracker = Arc::new(TopicTracker::new(&endpoint));
+    let topic_tracker = TopicTracker::new(&endpoint);
 
     // Set up the protocol router with topic tracking capability
     let _router = iroh::protocol::Router::builder(endpoint.clone())
