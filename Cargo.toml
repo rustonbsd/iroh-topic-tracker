@@ -1,6 +1,6 @@
 [package]
 name = "iroh-topic-tracker"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 authors = ["Zacharias Boehler <rustonbsd@mailfence.com>"]
 description = "Iroh universal (gossipsub) topic tracker."
