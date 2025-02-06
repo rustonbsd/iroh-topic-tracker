@@ -14,7 +14,7 @@ use crate::topic_tracker::TopicTracker;
 #[derive(Debug, Clone)]
 pub struct GossipAutoDiscovery {
     pub gossip: Arc<Gossip>,
-    topic_tracker: Arc<TopicTracker>,
+    topic_tracker: TopicTracker,
 }
 
 /// Trait for creating new auto-discovery enabled Gossip instances
@@ -73,7 +73,7 @@ impl AutoDiscoveryBuilder for Builder {
     ///
     /// A Result containing the new GossipAutoDiscovery instance
     async fn spawn_with_auto_discovery(self, endpoint: Endpoint) -> Result<GossipAutoDiscovery> {
-        let topic_tracker = Arc::new(TopicTracker::new(&endpoint));
+        let topic_tracker = TopicTracker::new(&endpoint);
         let gossip = Arc::new(self.spawn(endpoint).await?);
 
         Ok(GossipAutoDiscovery {

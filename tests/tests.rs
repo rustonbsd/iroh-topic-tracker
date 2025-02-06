@@ -29,13 +29,13 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     let topic_tracker1 = Arc::new(TopicTracker::new(&endpoint1));
     
     // Test getting nodes for a topic (should be empty initially own node id not reported to requester)
-    let nodes0 = topic_tracker0.clone().get_topic_nodes(&topic).await?;
+    let nodes0 = <TopicTracker as Clone>::clone(&topic_tracker0).get_topic_nodes(&topic).await?;
     assert!(nodes0.is_empty());
     println!("Query with node_id0 expected to be empty: {nodes0:?}");
     
     sleep(Duration::from_millis(10)).await;
 
-    let nodes1 = topic_tracker1.clone().get_topic_nodes(&topic).await?;
+    let nodes1 = <TopicTracker as Clone>::clone(&topic_tracker1).get_topic_nodes(&topic).await?;
     println!("Query with node_id1 expected to contain node_id0: {nodes1:?}");
     assert_eq!(nodes1[0].to_string(),topic_tracker0.node_id.to_string());
 
