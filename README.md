@@ -3,17 +3,29 @@
 [![Crates.io](https://img.shields.io/crates/v/iroh-topic-tracker.svg)](https://crates.io/crates/iroh-topic-tracker)
 [![Docs.rs](https://docs.rs/iroh-topic-tracker/badge.svg)](https://docs.rs/iroh-topic-tracker)
 
-**A tracker for Iroh NodeId's in GossipSub topics.**  
-This library integrates with [`iroh-gossip`](https://crates.io/crates/iroh-gossip) to automate peer discovery and includes a hosted `BOOTSTRAP_NODE` for seamless topic tracking without you needing to host anything. Your peers can discover each other even if both are behind NATs.
+**A tracker for Iroh NodeId's in GossipSub topics.**
+
+This library integrates with
+[`iroh-gossip`](https://crates.io/crates/iroh-gossip) to automate peer
+discovery and includes a hosted `BOOTSTRAP_NODE` for seamless topic tracking
+without you needing to host anything. Your peers can discover each other even
+if both are behind NATs.
 
 ---
 
 ## Overview
 
-The crate provides a [`TopicTracker`](https://docs.rs/iroh-topic-tracker/latest/iroh_topic_tracker/topic_tracker/struct.TopicTracker.html) to manage and discover peers participating in shared GossipSub topics. It leverages Iroh's direct connectivity and [`Router`](https://docs.rs/iroh/latest/iroh/protocol/struct.Router.html) to handle protocol routing.
+The crate provides a
+[`TopicTracker`](https://docs.rs/iroh-topic-tracker/latest/iroh_topic_tracker/topic_tracker/struct.TopicTracker.html)
+to manage and discover peers participating in shared GossipSub topics. It
+leverages Iroh's direct connectivity and
+[`Router`](https://docs.rs/iroh/latest/iroh/protocol/struct.Router.html) to
+handle protocol routing.
 
 ### Features
-- Automatic peer discovery via `iroh-gossip` (enabled with `iroh-gossip-auto-discovery` feature).
+
+- Automatic peer discovery via `iroh-gossip` (enabled with
+  `iroh-gossip-auto-discovery` feature).
 - Dedicated bootstrap node support for topic tracking.
 - Simple API to fetch active peers for a topic.
 
@@ -22,14 +34,18 @@ The crate provides a [`TopicTracker`](https://docs.rs/iroh-topic-tracker/latest/
 ## Getting Started
 
 ### Prerequisites
+
 Add the crate to your `Cargo.toml` with the required features:
+
 ```toml
 [dependencies]
 iroh-topic-tracker = { version = "0.1", features = ["iroh-gossip-auto-discovery"] }
 ```
 
 ### Automatic Discovery
+
 Enable `iroh-gossip` integration to automate peer discovery for topics:
+
 ```rust
 use futures_lite::StreamExt;
 use iroh::Endpoint;
@@ -68,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 ### Basic Setup with Iroh
+
 ```rust
 use iroh::{protocol::Router, Endpoint};
 use iroh_topic_tracker::topic_tracker::{Topic, TopicTracker};
@@ -94,20 +111,25 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-
 ---
 
 ## Examples
 
 ### Run a Topic Tracker Node
+
 Start a dedicated tracker node:
+
 ```bash
 cargo run --example server
 ```
-*Note: Update `secret.rs` with your `SecretKey` and configure `BOOTSTRAP_NODES` in `topic_tracker.rs` for secure communication.*
+
+*Note: Update `secret.rs` with your `SecretKey` and configure `BOOTSTRAP_NODES`
+in `topic_tracker.rs` for secure communication.*
 
 ### Query Active Peers
+
 Fetch the latest NodeIds for a topic:
+
 ```bash
 cargo run --example client
 ```
@@ -117,6 +139,7 @@ cargo run --example client
 ## Building
 
 Optimized release build for the tracker server:
+
 ```bash
 cargo build --release --example server
 ```
@@ -136,4 +159,6 @@ at your option.
 
 ### Contribution
 
-Unless explicitly stated, any contribution intentionally submitted for inclusion in this project shall be dual-licensed as above, without any additional terms or conditions.
+Unless explicitly stated, any contribution intentionally submitted for
+inclusion in this project shall be dual-licensed as above, without any
+additional terms or conditions.
