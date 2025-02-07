@@ -31,8 +31,10 @@ iroh-topic-tracker = { version = "0.1", features = ["iroh-gossip-auto-discovery"
 ### Automatic Discovery
 Enable `iroh-gossip` integration to automate peer discovery for topics:
 ```rust
-use iroh_topic_tracker::integrations::iroh_gossip::*;
-
+use futures_lite::StreamExt;
+use iroh::Endpoint;
+use iroh_gossip::net::{Event, Gossip, GossipEvent};
+use iroh_topic_tracker::{integrations::iroh_gossip::*, topic_tracker::Topic};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,8 +52,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Read from stream ..
     while let Some(event) = stream.next().await {
-        if let Ok(Event::Gossip(GossipEvent::Received(msg: Message))) = event {
-            
+        if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
+
             // Do something with msg...
             let msg_text = String::from_utf8(msg.content.to_vec()).unwrap();
 
@@ -60,13 +62,15 @@ async fn main() -> anyhow::Result<()> {
 
     // .. or Send to Sink
     sink.broadcast("my msg goes here".into()).await.unwrap();
+
+    Ok(())
 }
 ```
 
 ### Basic Setup with Iroh
 ```rust
 use iroh::{protocol::Router, Endpoint};
-use iroh_topic_tracker::topic_tracker::{ALPN, TopicTracker};
+use iroh_topic_tracker::topic_tracker::{Topic, TopicTracker};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -78,14 +82,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Attach to Iroh router
     let router = Router::builder(endpoint.clone())
-        .accept(ALPN, topic_tracker.clone())
+        .accept(TopicTracker::ALPN, topic_tracker.clone())
         .spawn()
         .await?;
 
     // Track peers in a topic
-    let topic = iroh_gossip::Topic::from_passphrase("my-secret-topic");
+    let topic = Topic::from_passphrase("my-secret-topic");
     let peers = topic_tracker.get_topic_nodes(&topic).await?;
-    
+
     Ok(())
 }
 ```
