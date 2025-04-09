@@ -10,13 +10,12 @@ async fn main() -> Result<()> {
     let _topic_id: TopicId = topic.clone().into();
 
     // Generate a new secret key for secure communication
-    let secret_key = SecretKey::generate(rand::rngs::OsRng);
+    let secret_key = SecretKey::generate(rand::rngs::ThreadRng::default());
 
     // Configure and initialize the network endpoint
     let endpoint = Endpoint::builder()
         .secret_key(secret_key)
         .discovery_n0() // Enable node discovery
-        .discovery_dht() // Enable DHT discovery
         .bind()
         .await?;
 

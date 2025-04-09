@@ -13,7 +13,6 @@ use iroh_topic_tracker::topic_tracker::Topic;
 async fn e2e_gossip_autodiscovery_test() -> anyhow::Result<()> {
     // Test topic creation and conversion
     let topic = Topic::new(OsRng.gen::<[u8; 32]>());
-
     // Create endpoint0 with nodeid0 and topic_tracker0
     let addr0 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
     let endpoint0 = Endpoint::builder()
@@ -83,7 +82,6 @@ async fn await_message(
                 return Ok(required_events_1_count == 1);
             }
             _ => {
-                
             }
         }
     }
