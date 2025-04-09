@@ -18,7 +18,6 @@ async fn main() -> Result<()> {
     let endpoint = Endpoint::builder()
         .secret_key(secret_key)
         .discovery_n0()
-        .discovery_dht()
         .bind()
         .await?;
 

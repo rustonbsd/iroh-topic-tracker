@@ -2,9 +2,7 @@ use std::{collections::HashMap, future::Future, pin::Pin, str::FromStr, sync::Ar
 
 use anyhow::{bail, Result};
 use iroh::{
-    endpoint::{Endpoint, Connecting, RecvStream, SendStream},
-    protocol::ProtocolHandler,
-    NodeAddr, NodeId, SecretKey,
+    endpoint::{Connection, Endpoint, RecvStream, SendStream}, node_info::NodeIdExt, protocol::ProtocolHandler, NodeId, SecretKey
 };
 use iroh_gossip::proto::TopicId;
 use serde::{Deserialize, Serialize};
@@ -45,18 +43,20 @@ impl TopicTracker {
     }
 
     pub async fn spawn_optional(self) -> Result<Self> {
-        tokio::spawn({
+                tokio::spawn({
             let me2 = self.clone();
             async move {
                 while let Some(connecting) = me2.clone().endpoint.accept().await {
                     match connecting.accept() {
                         Ok(conn) => {
-                            tokio::spawn({
-                                let me3 = me2.clone();
-                                async move {
-                                    let _ = me3.accept(conn).await;
-                                }
-                            });
+                            if let Ok(con) = conn.await {
+                                tokio::spawn({
+                                    let me3 = me2.clone();
+                                    async move {
+                                        let _ = me3.accept(con).await;
+                                    }
+                                });
+                            }
                         }
                         Err(err) => {
                             println!("Failed to connect {err}");
@@ -91,13 +91,14 @@ impl TopicTracker {
     pub async fn get_topic_nodes(self: Self, topic: &Topic) -> Result<Vec<NodeId>> {
         wait_for_relay(&self.endpoint).await?;
 
-        let conn = self
+        let conn_res = self
             .endpoint
             .connect(
-                NodeAddr::new(NodeId::from_str(Self::BOOTSTRAP_NODES)?),
+                NodeId::from_str(Self::BOOTSTRAP_NODES)?,
                 Self::ALPN,
             )
-            .await?;
+            .await;
+        let conn = conn_res?;
 
         let (mut send, mut recv) = conn.open_bi().await?;
 
@@ -134,8 +135,8 @@ impl TopicTracker {
         back
     }
 
-    async fn accept(&self, conn: Connecting) -> Result<()> {
-        let (mut send, mut recv) = conn.await?.accept_bi().await?;
+    async fn accept(&self, conn: Connection) -> Result<()> {
+        let (mut send, mut recv) = conn.accept_bi().await?;
         let msg = Self::recv_msg(&mut recv).await?;
 
         match msg {
@@ -228,7 +229,7 @@ impl Default for Topic {
 impl ProtocolHandler for TopicTracker {
     fn accept(
         &self,
-        conn: Connecting,
+        conn: Connection,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>> {
         let topic_tracker = self.clone();
 

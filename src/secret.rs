@@ -1,1 +1,1 @@
-pub const SECRET_SERVER_KEY: &str = "0123456789abcdefedcba9876543210123456789abcdefedcba9876543210123";
+pub const SECRET_SERVER_KEY: &str = "hhgdd3k3etbi5359dnmdt3itkre6y437jbjbo1ometd5ek6acrno";

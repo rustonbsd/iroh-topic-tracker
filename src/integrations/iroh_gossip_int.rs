@@ -117,12 +117,13 @@ impl AutoDiscoveryGossip for GossipAutoDiscovery {
                 .get_topic_nodes(&topic_id.into())
                 .await?;
             let node_ids_cap = node_ids.as_slice().to_vec();
+            
             if node_ids_cap.is_empty() {
                sleep(Duration::from_secs(backoff_timer)).await;
                backoff_timer += 1;
                continue;
             }
-            return self.gossip.subscribe_and_join(topic_id, node_ids_cap.clone().into()).await;
+            return self.gossip.subscribe_and_join(topic_id, node_ids_cap.clone().into()).await.map_err(Into::into);
         }
     }
 }
