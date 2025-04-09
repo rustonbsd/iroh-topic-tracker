@@ -2,7 +2,7 @@ use std::{collections::HashMap, future::Future, pin::Pin, str::FromStr, sync::Ar
 
 use anyhow::{bail, Result};
 use iroh::{
-    endpoint::{Connection, Endpoint, RecvStream, SendStream}, node_info::NodeIdExt, protocol::ProtocolHandler, NodeId, SecretKey
+    endpoint::{Connection, Endpoint, RecvStream, SendStream}, protocol::ProtocolHandler, NodeId, SecretKey
 };
 use iroh_gossip::proto::TopicId;
 use serde::{Deserialize, Serialize};

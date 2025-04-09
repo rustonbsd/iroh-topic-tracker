@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use iroh::{Endpoint, SecretKey};
@@ -8,8 +8,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create secret key from constant
-    let sk_bytes = z32::decode(SECRET_SERVER_KEY.as_bytes())?;
-    let secret_key = SecretKey::from_bytes(sk_bytes.as_slice().try_into().unwrap());
+    let secret_key = SecretKey::from_str(SECRET_SERVER_KEY)?;
     
     // Configure and initialize network endpoint
     let endpoint = Endpoint::builder()
