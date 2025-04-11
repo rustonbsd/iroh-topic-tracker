@@ -22,13 +22,14 @@ pub struct TopicTracker {
 enum Protocol {
     TopicRequest((Topic, NodeId)),
     TopicList(Vec<NodeId>),
+    // Add Ticket request and list for hashes of iroh-blobs store with ttl?
     Done,
 }
 
 impl TopicTracker {
     pub const ALPN: &'static [u8] = b"iroh/topictracker/1";
-    pub const MAX_TOPIC_LIST_SIZE: usize = 10;
-    pub const MAX_NODE_IDS_PER_TOPIC: usize = 100;
+    pub const MAX_TOPIC_LIST_SIZE: usize = 100;
+    pub const MAX_NODE_IDS_PER_TOPIC: usize = 1000;
     pub const BOOTSTRAP_NODES: &str =
         "abcdef4df4d74587095d071406c2a8462bde5079cbbc0c50051b9b2e84d67691";
     pub const MAX_MSG_SIZE_BYTES: u64 = 1024*1024;
