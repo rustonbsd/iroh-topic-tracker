@@ -23,8 +23,7 @@ async fn main() -> Result<()> {
     // Set up router to handle topic tracking protocol
     let _router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(TopicTracker::ALPN, topic_tracker.clone())
-        .spawn()
-        .await?;
+        .spawn();
 
     // Read from stdin and print topic tracker memory usage on each line
     let from = tokio::io::stdin();

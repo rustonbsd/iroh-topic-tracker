@@ -3,7 +3,8 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use anyhow::bail;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, PublicKey, SecretKey};
-use iroh_gossip::net::{Event, Gossip, GossipEvent};
+use iroh_gossip::api::Event;
+use iroh_gossip::net::{Gossip};
 use rand::{rngs::OsRng, Rng};
 
 use iroh_topic_tracker::integrations::iroh_gossip::*;
@@ -27,8 +28,7 @@ async fn e2e_gossip_autodiscovery_test() -> anyhow::Result<()> {
         .await?;
     let _router0 = iroh::protocol::Router::builder(endpoint0.clone())
         .accept(iroh_gossip::ALPN, gossip0.gossip.clone())
-        .spawn()
-        .await?;
+        .spawn();
 
 
     // Create endpoint1 with nodeid1 and topic_tracker1
@@ -45,8 +45,7 @@ async fn e2e_gossip_autodiscovery_test() -> anyhow::Result<()> {
         .await?;
     let _router1 = iroh::protocol::Router::builder(endpoint1.clone())
         .accept(iroh_gossip::ALPN, gossip1.gossip.clone())
-        .spawn()
-        .await?;
+        .spawn();
 
     
 
@@ -76,7 +75,7 @@ async fn await_message(
     let mut required_events_1_count = 0;
     while let Some(event) = gossip_client.next().await {
         match event {
-            Ok(Event::Gossip(GossipEvent::Received(msg))) => {
+            Ok(Event::Received(msg)) => {
                 assert!(String::from_utf8(msg.content.to_vec())?.starts_with("hello iroh "));
                 required_events_1_count += 1;
                 return Ok(required_events_1_count == 1);

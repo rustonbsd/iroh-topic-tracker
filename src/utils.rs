@@ -1,4 +1,4 @@
-use iroh::Endpoint;
+use iroh::{Endpoint, Watcher};
 
 /// Waits for the endpoint to establish a connection with its home relay.
 ///

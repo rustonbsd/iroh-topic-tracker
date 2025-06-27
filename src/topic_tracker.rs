@@ -1,13 +1,18 @@
-use std::{collections::HashMap, future::Future, pin::Pin, str::FromStr, sync::Arc};
+use std::{collections::HashMap, future::Future, str::FromStr, sync::Arc};
 
 use anyhow::{bail, Result};
 use iroh::{
-    endpoint::{Connection, Endpoint, RecvStream, SendStream}, protocol::ProtocolHandler, NodeId, SecretKey
+    endpoint::{Connection, Endpoint, RecvStream, SendStream},
+    protocol::{AcceptError, ProtocolHandler},
+    NodeId, SecretKey,
 };
 use iroh_gossip::proto::TopicId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::Mutex,
+};
 
 use crate::utils::wait_for_relay;
 
@@ -31,7 +36,7 @@ impl TopicTracker {
     pub const MAX_NODE_IDS_PER_TOPIC: usize = 100;
     pub const BOOTSTRAP_NODES: &str =
         "abcdef4df4d74587095d071406c2a8462bde5079cbbc0c50051b9b2e84d67691";
-    pub const MAX_MSG_SIZE_BYTES: u64 = 1024*1024;
+    pub const MAX_MSG_SIZE_BYTES: u64 = 1024 * 1024;
 
     pub fn new(endpoint: &Endpoint) -> Self {
         let me = Self {
@@ -43,7 +48,7 @@ impl TopicTracker {
     }
 
     pub async fn spawn_optional(self) -> Result<Self> {
-                tokio::spawn({
+        tokio::spawn({
             let me2 = self.clone();
             async move {
                 while let Some(connecting) = me2.clone().endpoint.accept().await {
@@ -79,7 +84,7 @@ impl TopicTracker {
 
     async fn recv_msg(recv: &mut RecvStream) -> Result<Protocol> {
         let len = recv.read_u64_le().await?;
-        
+
         assert!(len <= Self::MAX_MSG_SIZE_BYTES);
 
         let mut buffer = vec![0u8; len as usize];
@@ -93,10 +98,7 @@ impl TopicTracker {
 
         let conn_res = self
             .endpoint
-            .connect(
-                NodeId::from_str(Self::BOOTSTRAP_NODES)?,
-                Self::ALPN,
-            )
+            .connect(NodeId::from_str(Self::BOOTSTRAP_NODES)?, Self::ALPN)
             .await;
         let conn = conn_res?;
 
@@ -130,7 +132,7 @@ impl TopicTracker {
             }
             _ => bail!("illegal message received"),
         };
-        
+
         Self::send_msg(Protocol::Done, &mut send).await?;
         back
     }
@@ -164,13 +166,13 @@ impl TopicTracker {
                         let mut node_ids = Vec::with_capacity(Self::MAX_NODE_IDS_PER_TOPIC);
                         node_ids.push(remote_node_id);
                         _kv.insert(topic.0, node_ids);
-                        
+
                         resp = Protocol::TopicList(vec![]);
                     }
                 };
 
                 Self::send_msg(resp, &mut send).await?;
-                Self::send_msg(Protocol::Done,&mut send).await?;
+                Self::send_msg(Protocol::Done, &mut send).await?;
                 Self::recv_msg(&mut recv).await?;
 
                 drop(_kv);
@@ -216,7 +218,7 @@ impl Topic {
     }
 
     pub fn to_secret_key(&self) -> SecretKey {
-        SecretKey::from_bytes(&self.0.clone()) 
+        SecretKey::from_bytes(&self.0.clone())
     }
 }
 
@@ -230,34 +232,39 @@ impl ProtocolHandler for TopicTracker {
     fn accept(
         &self,
         conn: Connection,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>> {
+    ) -> impl Future<Output = Result<(), AcceptError>> + Send {
         let topic_tracker = self.clone();
 
         Box::pin(async move {
-            topic_tracker.accept(conn).await?;
+            topic_tracker
+                .accept(conn)
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             Ok(())
         })
     }
 }
 
-#[cfg(feature="iroh-gossip-cast")]
+#[cfg(feature = "iroh-gossip-cast")]
 impl Into<iroh_gossip::proto::TopicId> for Topic {
     fn into(self) -> iroh_gossip::proto::TopicId {
         TopicId::from_bytes(self.0)
     }
 }
 
-#[cfg(feature="iroh-gossip-cast")]
+#[cfg(feature = "iroh-gossip-cast")]
 impl From<iroh_gossip::proto::TopicId> for Topic {
     fn from(value: iroh_gossip::proto::TopicId) -> Self {
-        Self { 0: *value.as_bytes() }
+        Self {
+            0: *value.as_bytes(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_topic_from_passphrase() {
         let topic = Topic::from_passphrase("test123");

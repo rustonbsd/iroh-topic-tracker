@@ -25,8 +25,7 @@ async fn main() -> Result<()> {
     // Set up the protocol router with topic tracking capability
     let _router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(TopicTracker::ALPN, topic_tracker.clone())
-        .spawn()
-        .await?;
+        .spawn();
 
     // Query nodes participating in this topic
     let node_ids_for_topic = topic_tracker.get_topic_nodes(&topic).await?;
