@@ -124,7 +124,7 @@ cargo run --example server
 ```
 
 *Note: Update `secret.rs` with your `SecretKey` and configure `BOOTSTRAP_NODES`
-in `topic_tracker.rs` for secure communication.*
+in `topic_tracker.rs` to use your own tracker.*
 
 ### Query Active Peers
 
