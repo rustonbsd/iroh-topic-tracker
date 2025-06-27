@@ -3,8 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Result;
 use iroh::Endpoint;
 use iroh_gossip::{
-    net::{Builder, Gossip, GossipTopic},
-    proto::TopicId,
+    api::GossipTopic, net::{Builder, Gossip}, proto::TopicId
 };
 use tokio::time::sleep;
 
@@ -74,7 +73,7 @@ impl AutoDiscoveryBuilder for Builder {
     /// A Result containing the new GossipAutoDiscovery instance
     async fn spawn_with_auto_discovery(self, endpoint: Endpoint) -> Result<GossipAutoDiscovery> {
         let topic_tracker = TopicTracker::new(&endpoint);
-        let gossip = Arc::new(self.spawn(endpoint).await?);
+        let gossip = Arc::new(self.spawn(endpoint));
 
         Ok(GossipAutoDiscovery {
             gossip,

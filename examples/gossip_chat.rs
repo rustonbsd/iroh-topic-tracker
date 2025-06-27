@@ -1,7 +1,8 @@
 use anyhow::Result;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey};
-use iroh_gossip::net::{Event, Gossip, GossipEvent};
+use iroh_gossip::net::Gossip;
+use iroh_gossip::api::Event;
 use iroh_topic_tracker::topic_tracker::Topic;
 
 // Import optional feature for iroh-gossip integration
@@ -30,28 +31,26 @@ async fn main() -> Result<()> {
     // Set up protocol router
     let _router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.gossip.clone())
-        .spawn()
-        .await?;
+        .spawn();
 
     // Create topic from passphrase
     let topic = Topic::from_passphrase("my-iroh-gossip-topic");
 
     // Split into sink (sending) and stream (receiving) 
-    let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
+    let (mut sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
 
     // Spawn listener for incoming messages
     tokio::spawn(async move {
         while let Some(event) = stream.next().await {
-            if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
+
+            if let Ok(Event::Received(msg)) = event {
                 println!(
                     "Message from {}: {}",
                     &msg.delivered_from.to_string()[0..8],
                     String::from_utf8(msg.content.to_vec()).unwrap()
                 );
-            } else if let Ok(Event::Gossip(GossipEvent::Joined(peers))) = event{
-                for peer in peers {
-                    println!("Joined by {}",&peer.to_string()[0..8]);
-                }
+            } else if let Ok(Event::NeighborUp(peer)) = event {
+                println!("Joined by {}",&peer.to_string()[0..8]);                
             }
         }
     });
