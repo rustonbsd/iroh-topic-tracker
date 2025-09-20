@@ -1,5 +1,10 @@
 # iroh-topic-tracker
 
+## No More Bootstrap Server
+**IMPORTANT:** A new, serverless alternative is now available (see [distributed-topic-tracker](https://github.com/rustonbsd/distributed-topic-tracker)). You can still self host this project but the Server that I have been hosting for the past months is now (as of the 25.09.2025) offline and the default bootstrap node no longer works. If you need help setting it up on your own, please feel free to reach out or create an issue.
+
+---
+
 [![Crates.io](https://img.shields.io/crates/v/iroh-topic-tracker.svg)](https://crates.io/crates/iroh-topic-tracker)
 [![Docs.rs](https://docs.rs/iroh-topic-tracker/badge.svg)](https://docs.rs/iroh-topic-tracker)
 
