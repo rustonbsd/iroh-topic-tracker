@@ -1,26 +1,27 @@
 use std::{sync::Arc, time::Duration};
 
+use dht::SigningKey;
 use iroh::{Endpoint, SecretKey};
-use iroh_topic_tracker::topic_tracker::{Topic, TopicTracker};
-use rand::{rngs::OsRng, Rng};
 use tokio::time::sleep;
 
 
 #[tokio::test]
 async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
+
+    let secret_key = SecretKey::generate(&mut rand::rng());
+    let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
+    
     // Test topic creation and conversion
-    let topic = Topic::new(OsRng.gen::<[u8; 32]>());
+    let topic = Topic::new(rand::random::<[u8; 32]>());
     
     // Create endpoint0 with nodeid0 and topic_tracker0
     let endpoint0 = Endpoint::builder()
-        .discovery_n0()
-        .secret_key(SecretKey::generate(rand::rngs::OsRng))
+        .secret_key(SecretKey::generate(&mut rand::rng()))
         .bind()
         .await?;
     // Create endpoint1 with nodeid1 and topic_tracker1
     let endpoint1 = Endpoint::builder()
-        .discovery_n0()
-        .secret_key(SecretKey::generate(rand::rngs::OsRng))
+        .secret_key(SecretKey::generate(&mut rand::rng()))
         .bind()
         .await?;
 
