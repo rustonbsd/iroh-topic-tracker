@@ -1,169 +1,99 @@
 # iroh-topic-tracker
 
-## No More Bootstrap Server
-**IMPORTANT:** A new, serverless alternative is now available (see [distributed-topic-tracker](https://github.com/rustonbsd/distributed-topic-tracker)). You can still self host this project but the Server that I have been hosting for the past months is now (as of the 25.09.2025) offline and the default bootstrap node no longer works. If you need help setting it up on your own, please feel free to reach out or create an issue.
-
----
-
 [![Crates.io](https://img.shields.io/crates/v/iroh-topic-tracker.svg)](https://crates.io/crates/iroh-topic-tracker)
 [![Docs.rs](https://docs.rs/iroh-topic-tracker/badge.svg)](https://docs.rs/iroh-topic-tracker)
+[![License](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](LICENSE-MIT)
 
-**A tracker for Iroh NodeId's in GossipSub topics.**
+Serverless, decentralized peer discovery for `iroh-gossip` topics using experimental **DHT Signed Peer Announcements**.
 
-This library integrates with
-[`iroh-gossip`](https://crates.io/crates/iroh-gossip) to automate peer
-discovery and includes a hosted `BOOTSTRAP_NODE` for seamless topic tracking
-without you needing to host anything. Your peers can discover each other even
-if both are behind NATs.
+This crate uses the implementation of the experimental **Draft BEP** ([PR #174](https://github.com/bittorrent/bittorrent.org/pull/174)) for announcing and discovering cryptographically signed peer identities (Ed25519 public keys) on the Mainline DHT by [@Nuhvi](https://github.com/Nuhvi). This enables overlay networks like Iroh to discover peers without centralized trackers, utilizing signed announcements to verify identity before connection.
 
----
+## Architecture
 
-## Overview
+Instead of announcing IP addresses, peers announce their **EndpointId** (Ed25519 public key) signed with a timestamp. This allows for secure, trackerless discovery where connection establishment and NAT traversal are handled entirely by Iroh.
 
-The crate provides a
-[`TopicTracker`](https://docs.rs/iroh-topic-tracker/latest/iroh_topic_tracker/topic_tracker/struct.TopicTracker.html)
-to manage and discover peers participating in shared GossipSub topics. It
-leverages Iroh's direct connectivity and
-[`Router`](https://docs.rs/iroh/latest/iroh/protocol/struct.Router.html) to
-handle protocol routing.
+```mermaid
+sequenceDiagram
+    participant A as Node A
+    participant DHT as Mainline DHT (Extended)
+    participant B as Node B
 
-### Features
+    Note over A, B: Topic InfoHash = hash(topic)
 
-- Automatic peer discovery via `iroh-gossip` (enabled with
-  `iroh-gossip-auto-discovery` feature).
-- Dedicated bootstrap node support for topic tracking.
-- Simple API to fetch active peers for a topic.
+    A->>DHT: announce_signed_peer(InfoHash, NodeId_A, Sig)
+    B->>DHT: get_signed_peers(InfoHash)
+    DHT-->>B: Returns: [(NodeId_A, Sig, Timestamp)]
 
----
+    B->>B: Verify Signature & Timestamp
+    B->>A: Iroh Direct Connection (Holepunch)
+    A->>B: iroh-gossip takes over
+```
 
-## Getting Started
+## Features
 
-### Prerequisites
+- **Signed Discovery:** Using `announce_signed_peer` / `get_signed_peers` extensions.
+- **Zero Config:** Relies on public DHT nodes supporting the extension (at the moment there is only one bootstrap node with the extension and [MTU increase fix](https://github.com/Nuhvi/mainline/pull/36) to make this work.
+- **Secure:** Prevents identity spoofing via Ed25519 signatures. (todo: check signature validity)
 
-Add the crate to your `Cargo.toml` with the required features:
+## Usage
+
+Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-iroh-topic-tracker = { version = "0.1", features = ["iroh-gossip-auto-discovery"] }
+iroh = "0.95"
+iroh-gossip = "0.95"
+iroh-topic-tracker = "0.2"
 ```
 
-### Automatic Discovery
-
-Enable `iroh-gossip` integration to automate peer discovery for topics:
+Subscribe to a topic with automatic discovery:
 
 ```rust
-use futures_lite::StreamExt;
 use iroh::Endpoint;
-use iroh_gossip::net::{Event, Gossip, GossipEvent};
-use iroh_topic_tracker::{integrations::iroh_gossip::*, topic_tracker::Topic};
+use iroh_gossip::net::Gossip;
+use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Configure Iroh endpoint with discovery
-    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
+    // 1. Create keys and Endpoint
+    let secret_key = SecretKey::generate(&mut rand::rng());
+    let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
-    // Configure gossip protocol with auto-discovery
-    let gossip = Gossip::builder()
-        .spawn_with_auto_discovery(endpoint.clone())
+    let endpoint = Endpoint::builder()
+        .secret_key(secret_key.clone())
+        .bind()
         .await?;
 
-    // Join a topic and start tracking
-    let topic = Topic::from_passphrase("my-iroh-gossip-topic");
-    let (sink, mut stream) = gossip.subscribe_and_join(topic.into()).await?.split();
+    // 2. Setup iroh-gossip as usual
+    let gossip = Gossip::builder().spawn(endpoint.clone());
 
-    // Read from stream ..
-    while let Some(event) = stream.next().await {
-        if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
+    // 3. Register gossip protocol with Router
+    let _router = Router::builder(endpoint.clone())
+        .accept(iroh_gossip::ALPN, gossip.clone())
+        .spawn();
+      
+    // 4. Set topic and discovery config
+    let topic_id = "my_top22c".as_bytes().to_vec();
+    let config = TopicDiscoveryConfig::new(signing_key);
 
-            // Do something with msg...
-            let msg_text = String::from_utf8(msg.content.to_vec()).unwrap();
 
-        }
-    }
+    // 4. Subscribe and start discovery
+    let (sender, mut receiver, discovery_handle) = gossip
+        .subscribe_with_discovery_joined(topic_id, vec![], endpoint.clone(), config)
+        .await?;
+    
+    // Use sender/receiver as normal...
 
-    // .. or Send to Sink
-    sink.broadcast("my msg goes here".into()).await.unwrap();
-
+    // drop discovery handle to stop discovery when done
+    drop(discovery_handle);
     Ok(())
 }
 ```
 
-### Basic Setup with Iroh
+## References
 
-```rust
-use iroh::{protocol::Router, Endpoint};
-use iroh_topic_tracker::topic_tracker::{Topic, TopicTracker};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Configure Iroh endpoint with discovery
-    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
-
-    // Initialize topic tracker
-    let topic_tracker = TopicTracker::new(&endpoint);
-
-    // Attach to Iroh router
-    let router = Router::builder(endpoint.clone())
-        .accept(TopicTracker::ALPN, topic_tracker.clone())
-        .spawn()
-        .await?;
-
-    // Track peers in a topic
-    let topic = Topic::from_passphrase("my-secret-topic");
-    let peers = topic_tracker.get_topic_nodes(&topic).await?;
-
-    Ok(())
-}
-```
-
----
-
-## Examples
-
-### Run a Topic Tracker Node
-
-Start a dedicated tracker node:
-
-```bash
-cargo run --example server
-```
-
-*Note: Update `secret.rs` with your `SecretKey` and configure `BOOTSTRAP_NODES`
-in `topic_tracker.rs` to use your own tracker.*
-
-### Query Active Peers
-
-Fetch the latest NodeIds for a topic:
-
-```bash
-cargo run --example client
-```
-
----
-
-## Building
-
-Optimized release build for the tracker server:
-
-```bash
-cargo build --release --example server
-```
-
----
+- [Draft BEP: DHT Signed Peer Announcements (PR #174)](https://github.com/bittorrent/bittorrent.org/pull/174)
 
 ## License
 
-This project is licensed under either of
-
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE.txt) or
-  <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT.txt) or
-  <http://opensource.org/licenses/MIT>)
-
-at your option.
-
-### Contribution
-
-Unless explicitly stated, any contribution intentionally submitted for
-inclusion in this project shall be dual-licensed as above, without any
-additional terms or conditions.
+Dual-licensed under [Apache 2.0](LICENSE-APACHE.txt) and [MIT](LICENSE-MIT.txt).
