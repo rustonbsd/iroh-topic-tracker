@@ -12,6 +12,7 @@ categories = ["network-programming"]
 
 [dependencies]
 iroh = "0.95"
+iroh-gossip = { version = "0.95" }
 tokio ={ version="1",features = ["full"] }
 anyhow = "1"
 rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
@@ -25,26 +26,10 @@ futures-lite = "2"
 sha2 = "0.10"
 hex = "0.4"
 
-dht = { git = "https://github.com/Nuhvi/mainline", branch = "main", default-features = false, features = ["async"] }
+dht = { git = "https://github.com/rustonbsd/mainline", rev="f781d30b36d7b7573f309ce5b88b72e7dbb15132", default-features = false, features = ["async"] }
 
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "env-filter", "ansi"] }
 
-# Optional dependencies
-iroh-gossip = { version = "0.95", optional = true }
-
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
-
-[features]
-default = ["iroh-gossip-cast","iroh-gossip-auto-discovery"]
-iroh-gossip-cast = ["iroh-gossip"]
-iroh-gossip-auto-discovery = ["iroh-gossip","iroh-gossip-cast"]
-
-[profile.dev]
-opt-level = 0
-
-[profile.release]
-opt-level = 3
-lto = true
-panic = "abort"

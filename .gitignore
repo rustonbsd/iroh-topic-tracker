@@ -22,3 +22,4 @@ Cargo.lock
 
 src/secret.rs
 .DS_Store
+solution.txt
