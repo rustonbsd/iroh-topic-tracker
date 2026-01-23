@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .accept(iroh_gossip::ALPN, gossip.clone())
         .spawn();
 
-    let topic_id = "my_top22c".as_bytes().to_vec();
+    let topic_id = "testnet".as_bytes().to_vec();
     let config = TopicDiscoveryConfig::new(signing_key).max_peers_per_round(Some(5));
 
     tracing::info!("Starting subscription to topic...");
