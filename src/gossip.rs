@@ -248,7 +248,18 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         let state = DiscoveryState::new(config.retry_interval);
 
         tracing::info!("subscribe_with_discovery: initializing shared DHT");
-        let dht = Arc::new(init_dht().await?);
+        let mut tries = 0;
+        let dht = loop {
+            if let Ok(dht) = init_dht().await {
+                break Arc::new(dht);
+            }
+            tracing::warn!("subscribe_with_discovery: DHT init failed, retrying in 2s");
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            tries += 1;
+            if tries > 5 {
+                anyhow::bail!("DHT init failed after 5 attempts");
+            }
+        };
 
         let tasks = vec![
             spawn_announce_task(state.clone(), dht.clone(), topic_bytes, config.clone()),
