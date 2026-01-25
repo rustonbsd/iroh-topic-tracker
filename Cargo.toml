@@ -26,7 +26,7 @@ futures-lite = "2"
 sha2 = "0.10"
 hex = "0.4"
 
-dht = { git = "https://github.com/rustonbsd/mainline", rev="0201536d38f53c37afd397034dea869b3b4b5a35", default-features = false, features = ["async"] }
+dht = { version = "6.2.0", default-features = false, features = ["async"] }
 
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "env-filter", "ansi"] }
