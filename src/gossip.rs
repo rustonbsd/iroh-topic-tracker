@@ -1,8 +1,8 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -10,13 +10,17 @@ use std::{
 use dht::async_dht::AsyncDht;
 use ed25519_dalek::SigningKey;
 use futures_lite::StreamExt;
-use iroh::{Endpoint, EndpointId};
+use iroh::{EndpointId, Watcher, endpoint::EndpointHooks};
 use iroh_gossip::api::{GossipReceiver, GossipSender};
+use n0_future::time;
+use n0_watcher::Watchable;
 use sha2::Digest;
 
 #[derive(Debug, Clone)]
 pub struct TopicDiscoveryConfig {
     pub signing_key: SigningKey,
+    /// EndpointHook to track connections
+    pub hook: TopicDiscoveryHook,
     /// How often to re-announce to DHT (default: 5 minutes)
     pub announce_interval: Duration,
     /// Discovery interval when we have peers (default: 60s)
@@ -31,25 +35,17 @@ pub struct TopicDiscoveryConfig {
     pub max_peers_per_round: Option<usize>,
 }
 
-impl Default for TopicDiscoveryConfig {
-    fn default() -> Self {
+impl TopicDiscoveryConfig {
+    pub fn new(signing_key: SigningKey, hook: TopicDiscoveryHook) -> Self {
         Self {
-            signing_key: SigningKey::generate(&mut rand::rng()),
+            signing_key,
+            hook,
             announce_interval: Duration::from_secs(300),
             discovery_interval: Duration::from_secs(60),
             discovery_interval_no_peers: Duration::from_secs(2),
             connection_timeout: Duration::from_secs(5),
             retry_interval: Duration::from_secs(300),
             max_peers_per_round: Some(5),
-        }
-    }
-}
-
-impl TopicDiscoveryConfig {
-    pub fn new(signing_key: SigningKey) -> Self {
-        Self {
-            signing_key,
-            ..Default::default()
         }
     }
 
@@ -84,24 +80,70 @@ impl TopicDiscoveryConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DiscoveryState {
     /// Number of peers we've successfully joined to gossip
-    connected_count: AtomicUsize,
+    connected_count: Watchable<usize>,
+    /// Set of connected peer IDs (can contain old/stale entries)
+    connected_peers: Arc<Mutex<BTreeSet<EndpointId>>>,
     /// Signal to stop all tasks
-    stopped: AtomicBool,
+    stopped: Arc<AtomicBool>,
     /// Peers we've attempted to connect to, with timestamp for retry logic
-    attempted: Mutex<HashMap<[u8; 32], Instant>>,
+    attempted: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
     /// How long before we retry a failed peer
     retry_interval: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct TopicDiscoveryHook {
+    states: Arc<Mutex<Vec<DiscoveryState>>>,
+}
+
+impl Default for TopicDiscoveryHook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TopicDiscoveryHook {
+    pub fn new() -> Self {
+        Self {
+            states: Arc::new(Mutex::new(vec![])),
+        }
+    }
+
+    fn add_state(&self, state: &DiscoveryState) {
+        if let Ok(mut states) = self.states.lock() {
+            states.push(state.clone());
+        }
+    }
+
+    fn increment_connected(&self, peer_id: EndpointId) {
+        if let Ok(states) = self.states.lock() {
+            for state in states.iter() {
+                state.increment_connected(peer_id);
+            }
+        }
+    }
+}
+
+impl EndpointHooks for TopicDiscoveryHook {
+    async fn after_handshake<'a>(
+        &'a self,
+        conn: &'a iroh::endpoint::ConnectionInfo,
+    ) -> iroh::endpoint::AfterHandshakeOutcome {
+        self.increment_connected(conn.remote_id());
+        iroh::endpoint::AfterHandshakeOutcome::accept()
+    }
 }
 
 impl DiscoveryState {
     fn new(retry_interval: Duration) -> Arc<Self> {
         Arc::new(Self {
-            connected_count: AtomicUsize::new(0),
-            stopped: AtomicBool::new(false),
-            attempted: Mutex::new(HashMap::new()),
+            connected_count: Watchable::new(0),
+            connected_peers: Arc::new(Mutex::new(BTreeSet::new())),
+            stopped: Arc::new(AtomicBool::new(false)),
+            attempted: Arc::new(Mutex::new(HashMap::new())),
             retry_interval,
         })
     }
@@ -115,15 +157,21 @@ impl DiscoveryState {
     }
 
     fn has_connections(&self) -> bool {
-        self.connected_count.load(Ordering::Relaxed) > 0
+        self.connected_count.get() > 0
     }
 
     fn connection_count(&self) -> usize {
-        self.connected_count.load(Ordering::Relaxed)
+        self.connected_count.get()
     }
 
-    fn increment_connected(&self) {
-        self.connected_count.fetch_add(1, Ordering::Relaxed);
+    fn increment_connected(&self, peer_id: EndpointId) {
+        if let Ok(mut peers) = self.connected_peers.lock()
+            && peers.insert(peer_id)
+        {
+            self.connected_count
+                .set(self.connected_count.get() + 1)
+                .ok();
+        }
     }
 
     /// Mark a peer as attempted. Returns true if we should try to connect
@@ -186,7 +234,6 @@ pub trait TopicDiscoveryExt {
         &self,
         topic_id: Vec<u8>,
         bootstrap_nodes: Vec<EndpointId>,
-        endpoint: Endpoint,
         config: TopicDiscoveryConfig,
     ) -> anyhow::Result<(GossipSender, GossipReceiver, TopicDiscoveryHandle)>;
 
@@ -195,7 +242,6 @@ pub trait TopicDiscoveryExt {
         &self,
         topic_id: Vec<u8>,
         bootstrap_nodes: Vec<EndpointId>,
-        endpoint: Endpoint,
         config: TopicDiscoveryConfig,
     ) -> anyhow::Result<(GossipSender, GossipReceiver, TopicDiscoveryHandle)>;
 }
@@ -205,12 +251,11 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         &self,
         topic_id: Vec<u8>,
         bootstrap_nodes: Vec<EndpointId>,
-        endpoint: Endpoint,
         config: TopicDiscoveryConfig,
     ) -> anyhow::Result<(GossipSender, GossipReceiver, TopicDiscoveryHandle)> {
         tracing::info!("subscribe_with_discovery_joined: starting subscription");
         let (sender, mut receiver, handle) = self
-            .subscribe_with_discovery(topic_id, bootstrap_nodes, endpoint, config)
+            .subscribe_with_discovery(topic_id, bootstrap_nodes, config)
             .await?;
         tracing::info!("subscribe_with_discovery_joined: waiting for receiver.joined()");
         receiver.joined().await?;
@@ -222,7 +267,6 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         &self,
         topic_id: Vec<u8>,
         bootstrap_nodes: Vec<EndpointId>,
-        endpoint: Endpoint,
         config: TopicDiscoveryConfig,
     ) -> anyhow::Result<(GossipSender, GossipReceiver, TopicDiscoveryHandle)> {
         tracing::info!("subscribe_with_discovery: computing topic hash");
@@ -246,6 +290,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         );
 
         let state = DiscoveryState::new(config.retry_interval);
+        config.hook.add_state(&state);
 
         tracing::info!("subscribe_with_discovery: initializing shared DHT");
         let mut tries = 0;
@@ -263,14 +308,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
 
         let tasks = vec![
             spawn_announce_task(state.clone(), dht.clone(), topic_bytes, config.clone()),
-            spawn_discovery_task(
-                state.clone(),
-                dht,
-                sender.clone(),
-                topic_bytes,
-                config,
-                endpoint,
-            ),
+            spawn_discovery_task(state.clone(), dht, sender.clone(), topic_bytes, config),
         ];
 
         let handle = TopicDiscoveryHandle {
@@ -301,7 +339,6 @@ async fn init_dht() -> anyhow::Result<AsyncDht> {
 
 fn spawn_connector(
     state: Arc<DiscoveryState>,
-    endpoint: Endpoint,
     gossip_sender: GossipSender,
     peer: EndpointId,
     timeout: Duration,
@@ -319,29 +356,33 @@ fn spawn_connector(
             return;
         }
 
-        let deadline = tokio::time::Instant::now() + timeout;
-
-        loop {
-            if let Some(latency) = endpoint.latency(peer) {
-                state.increment_connected();
-                tracing::info!(
-                    "connector: connected to peer {} (latency: {:?}, total: {})",
-                    peer.fmt_short(),
-                    latency,
-                    state.connection_count()
-                );
-                return;
+        let wait_for_connection = async {
+            let mut stream = state.connected_count.watch().stream();
+            while let Some(next_counter) = stream.next().await {
+                if next_counter > 0 {
+                    return true;
+                }
             }
+            false
+        };
 
-            if tokio::time::Instant::now() >= deadline {
+        match time::timeout(timeout, wait_for_connection).await {
+            Ok(true) => {
+                state.increment_connected(peer);
+            }
+            Ok(false) => {
                 tracing::debug!(
+                    "connector: stopped while waiting for connection to {}",
+                    peer.fmt_short()
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
                     "connector: timeout waiting for connection to {} after {:?}",
                     peer.fmt_short(),
                     timeout
                 );
-                return;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     });
 }
@@ -404,7 +445,6 @@ fn spawn_discovery_task(
     gossip_sender: GossipSender,
     topic_hash_32: [u8; 32],
     config: TopicDiscoveryConfig,
-    endpoint: Endpoint,
 ) -> tokio::task::JoinHandle<()> {
     let my_key = config.signing_key.verifying_key().to_bytes();
 
@@ -463,7 +503,6 @@ fn spawn_discovery_task(
 
                 spawn_connector(
                     state.clone(),
-                    endpoint.clone(),
                     gossip_sender.clone(),
                     peer,
                     config.connection_timeout,

@@ -11,8 +11,8 @@ keywords = ["gossip", "iroh", "pubsub", "networking", "tracker"]
 categories = ["network-programming"]
 
 [dependencies]
-iroh = "0.95"
-iroh-gossip = { version = "0.95" }
+iroh = "0.96"
+iroh-gossip = { version = "0.96" }
 tokio ={ version="1",features = ["full"] }
 anyhow = "1"
 rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
@@ -25,6 +25,8 @@ postcard = { version = "1", default-features = false, features = ["alloc", "use-
 futures-lite = "2"
 sha2 = "0.10"
 hex = "0.4"
+n0-watcher = "0.6"
+n0-future = "0.3"
 
 dht = { version = "6.2.0", default-features = false, features = ["async"] }
 
