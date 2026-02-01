@@ -1,3 +1,3 @@
 mod gossip;
 
-pub use gossip::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHandle};
+pub use gossip::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHandle, TopicDiscoveryHook};
