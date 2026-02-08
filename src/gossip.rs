@@ -330,7 +330,7 @@ async fn init_dht() -> anyhow::Result<AsyncDht> {
     tracing::info!("init_dht: building DHT with bootstrap nodes");
     let dht = dht::Dht::builder()
         .no_bootstrap()
-        .bootstrap(&["pkarr.rustonbsd.com:6881"])
+        .bootstrap(&["pkarr.rustonbsd.com:6881", "relay.pkarr.org:6881"])
         .build()?
         .as_async();
 
