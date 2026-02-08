@@ -196,6 +196,12 @@ impl DiscoveryState {
             false
         }
     }
+
+    fn reset_attempt(&self, peer: [u8; 32]) {
+        if let Ok(mut map) = self.attempted.lock() {
+            map.remove(&peer);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -375,6 +381,10 @@ fn spawn_connector(
                     "connector: stopped while waiting for connection to {}",
                     peer.fmt_short()
                 );
+                
+                if !state.has_connections() {
+                    state.reset_attempt(*peer.as_bytes());
+                }
             }
             Err(_) => {
                 tracing::warn!(
@@ -382,6 +392,9 @@ fn spawn_connector(
                     peer.fmt_short(),
                     timeout
                 );
+                if !state.has_connections() {
+                    state.reset_attempt(*peer.as_bytes());
+                }
             }
         }
     });
