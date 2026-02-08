@@ -10,11 +10,15 @@ use std::{
 use dht::async_dht::AsyncDht;
 use ed25519_dalek::SigningKey;
 use futures_lite::StreamExt;
-use iroh::{EndpointId, Watcher, endpoint::EndpointHooks};
+use iroh::{
+    EndpointId, Watcher,
+    endpoint::{ConnectionInfo, EndpointHooks, PathInfoList},
+};
 use iroh_gossip::api::{GossipReceiver, GossipSender};
 use n0_future::time;
 use n0_watcher::Watchable;
 use sha2::Digest;
+use tokio::time::{sleep, timeout};
 
 #[derive(Debug, Clone)]
 pub struct TopicDiscoveryConfig {
@@ -118,13 +122,54 @@ impl TopicDiscoveryHook {
         }
     }
 
-    fn increment_connected(&self, peer_id: EndpointId) {
-        if let Ok(states) = self.states.lock() {
-            for state in states.iter() {
-                state.increment_connected(peer_id);
+    fn increment_connected(&self, conn_info: &ConnectionInfo) {
+        let states = self.states.clone();
+        let peer_id = conn_info.remote_id();
+        let init_rx = udp_rx_bytes(conn_info.paths());
+        let paths = conn_info.paths();
+        tracing::debug!(
+            "TopicDiscoveryHook: connection {} established",
+            peer_id.fmt_short()
+        );
+        tokio::spawn(async move {
+            match timeout(Duration::from_secs(10), async {
+                while init_rx == udp_rx_bytes(paths.clone()) {
+                    sleep(Duration::from_millis(100)).await;
+                }
+            })
+            .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        "TopicDiscoveryHook: connection {} shows UDP activity, incrementing state, init={}, after={}",
+                        peer_id.fmt_short(),
+                        init_rx,
+                        udp_rx_bytes(paths.clone())
+                    );
+                    if let Ok(states) = states.lock() {
+                        for state in states.iter() {
+                            state.increment_connected(peer_id);
+                        }
+                    }
+                }
+                Err(_) => tracing::info!(
+                    "TopicDiscoveryHook: connection {} did not show UDP activity within timeout, skipping state increment",
+                    peer_id.fmt_short()
+                ),
             }
-        }
+        });
     }
+}
+
+fn udp_rx_bytes(
+    mut paths: impl Watcher<Value = PathInfoList> + Unpin + Send + Sync + 'static,
+) -> u64 {
+    paths
+        .get()
+        .iter()
+        .map(|path| path.stats().udp_rx.bytes)
+        .reduce(|a, b| a + b)
+        .unwrap_or_default()
 }
 
 impl EndpointHooks for TopicDiscoveryHook {
@@ -132,7 +177,7 @@ impl EndpointHooks for TopicDiscoveryHook {
         &'a self,
         conn: &'a iroh::endpoint::ConnectionInfo,
     ) -> iroh::endpoint::AfterHandshakeOutcome {
-        self.increment_connected(conn.remote_id());
+        self.increment_connected(conn);
         iroh::endpoint::AfterHandshakeOutcome::accept()
     }
 }
@@ -381,7 +426,7 @@ fn spawn_connector(
                     "connector: stopped while waiting for connection to {}",
                     peer.fmt_short()
                 );
-                
+
                 if !state.has_connections() {
                     state.reset_attempt(*peer.as_bytes());
                 }
