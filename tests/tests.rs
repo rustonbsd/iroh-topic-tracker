@@ -46,11 +46,13 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Test topic - using a unique topic for this test
     let topic_id = format!("test_topic_{}", rand::random::<u32>()).into_bytes();
 
-    let config0 = TopicDiscoveryConfig::new(signing_key0, hook_0)
-        .max_peers_per_round(Some(5));
+    let config0 = TopicDiscoveryConfig::builder(signing_key0, hook_0)
+        .max_peers_per_round(Some(5))
+        .build();
 
-    let config1 = TopicDiscoveryConfig::new(signing_key1, hook_1)
-        .max_peers_per_round(Some(5));
+    let config1 = TopicDiscoveryConfig::builder(signing_key1, hook_1)
+        .max_peers_per_round(Some(5))
+        .build();
 
     // Subscribe both nodes to the same topic
     let (sender0, mut receiver0, handle0) = gossip0
@@ -71,7 +73,9 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
                 _ => {}
             }
         }
-    }).await.expect("Node 0 failed to find neighbor");
+    })
+    .await
+    .expect("Node 0 failed to find neighbor");
 
     // Wait for node 1 to see a neighbor
     timeout(Duration::from_secs(15), async {
@@ -83,7 +87,9 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
                 _ => {}
             }
         }
-    }).await.expect("Node 1 failed to find neighbor");
+    })
+    .await
+    .expect("Node 1 failed to find neighbor");
 
     // Send a message from node 0
     let test_message = format!("test message from node0: {}", rand::random::<u32>());

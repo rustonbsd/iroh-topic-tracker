@@ -1,4 +1,3 @@
-
 use dht::SigningKey;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, protocol::Router};
@@ -11,14 +10,15 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("iroh_topic_tracker=debug,gossip_chat=debug,warn")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("iroh_topic_tracker=debug,gossip_chat=debug,warn")
+            }),
         )
         .init();
 
     let secret_key = SecretKey::generate(&mut rand::rng());
     let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
-    
+
     let hook = TopicDiscoveryHook::new();
     let endpoint = Endpoint::builder()
         .secret_key(secret_key.clone())
@@ -33,7 +33,10 @@ async fn main() -> anyhow::Result<()> {
         .spawn();
 
     let topic_id = "testnet".as_bytes().to_vec();
-    let config = TopicDiscoveryConfig::new(signing_key, hook).max_peers_per_round(Some(5));
+    let config = TopicDiscoveryConfig::builder(signing_key, hook)
+        .max_peers_per_round(Some(10))
+        .dht_retries(None)
+        .build();
 
     tracing::info!("Starting subscription to topic...");
     let (sender, mut receiver, discovery_handle) = gossip
@@ -44,7 +47,9 @@ async fn main() -> anyhow::Result<()> {
     println!("Subscribed to topic and joined the network.");
 
     tracing::info!("Broadcasting hello world...");
-    sender.broadcast(format!("hello world {}",rand::random::<u32>()).into()).await?;
+    sender
+        .broadcast(format!("hello world {}", rand::random::<u32>()).into())
+        .await?;
 
     tracing::info!("Broadcast sent, waiting for events...");
     println!("send hello world");

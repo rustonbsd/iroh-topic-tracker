@@ -22,26 +22,71 @@ use tokio::time::{sleep, timeout};
 
 #[derive(Debug, Clone)]
 pub struct TopicDiscoveryConfig {
-    pub signing_key: SigningKey,
+    signing_key: SigningKey,
     /// EndpointHook to track connections
-    pub hook: TopicDiscoveryHook,
+    hook: TopicDiscoveryHook,
     /// How often to re-announce to DHT (default: 5 minutes)
-    pub announce_interval: Duration,
+    announce_interval: Duration,
     /// Discovery interval when we have peers (default: 60s)
-    pub discovery_interval: Duration,
+    discovery_interval: Duration,
     /// Discovery interval when we have no peers (default: 2s) - aggressive mode
-    pub discovery_interval_no_peers: Duration,
+    discovery_interval_no_peers: Duration,
     /// Timeout for individual connection attempts (default: 5s)
-    pub connection_timeout: Duration,
+    connection_timeout: Duration,
     /// How long before we retry a failed peer (default: 5 minutes)
-    pub retry_interval: Duration,
+    retry_interval: Duration,
     /// Max peers to attempt per discovery round (default: 5)
-    pub max_peers_per_round: Option<usize>,
+    max_peers_per_round: Option<usize>,
+    /// DHT initialization retry count if None infinite retries
+    dht_retries: Option<usize>,
+}
+
+pub struct ConfigBuilder(TopicDiscoveryConfig);
+
+impl ConfigBuilder {
+    pub fn announce_interval(mut self, interval: Duration) -> Self {
+        self.0.announce_interval = interval;
+        self
+    }
+
+    pub fn discovery_interval(mut self, interval: Duration) -> Self {
+        self.0.discovery_interval = interval;
+        self
+    }
+
+    pub fn discovery_interval_no_peers(mut self, interval: Duration) -> Self {
+        self.0.discovery_interval_no_peers = interval;
+        self
+    }
+
+    pub fn connection_timeout(mut self, timeout: Duration) -> Self {
+        self.0.connection_timeout = timeout;
+        self
+    }
+
+    pub fn retry_interval(mut self, interval: Duration) -> Self {
+        self.0.retry_interval = interval;
+        self
+    }
+
+    pub fn max_peers_per_round(mut self, max: Option<usize>) -> Self {
+        self.0.max_peers_per_round = max;
+        self
+    }
+
+    pub fn dht_retries(mut self, retries: Option<usize>) -> Self {
+        self.0.dht_retries = retries;
+        self
+    }
+
+    pub fn build(&self) -> TopicDiscoveryConfig {
+        self.0.clone()
+    }
 }
 
 impl TopicDiscoveryConfig {
-    pub fn new(signing_key: SigningKey, hook: TopicDiscoveryHook) -> Self {
-        Self {
+    pub fn builder(signing_key: SigningKey, hook: TopicDiscoveryHook) -> ConfigBuilder {
+        ConfigBuilder(Self {
             signing_key,
             hook,
             announce_interval: Duration::from_secs(300),
@@ -50,37 +95,36 @@ impl TopicDiscoveryConfig {
             connection_timeout: Duration::from_secs(5),
             retry_interval: Duration::from_secs(300),
             max_peers_per_round: Some(5),
-        }
+            dht_retries: Some(5),
+        })
     }
 
-    pub fn announce_interval(mut self, interval: Duration) -> Self {
-        self.announce_interval = interval;
-        self
+    pub fn announce_interval(&self) -> Duration {
+        self.announce_interval
     }
 
-    pub fn discovery_interval(mut self, interval: Duration) -> Self {
-        self.discovery_interval = interval;
-        self
+    pub fn discovery_interval(&self) -> Duration {
+        self.discovery_interval
     }
 
-    pub fn discovery_interval_no_peers(mut self, interval: Duration) -> Self {
-        self.discovery_interval_no_peers = interval;
-        self
+    pub fn discovery_interval_no_peers(&self) -> Duration {
+        self.discovery_interval_no_peers
     }
 
-    pub fn connection_timeout(mut self, timeout: Duration) -> Self {
-        self.connection_timeout = timeout;
-        self
+    pub fn connection_timeout(&self) -> Duration {
+        self.connection_timeout
     }
 
-    pub fn retry_interval(mut self, interval: Duration) -> Self {
-        self.retry_interval = interval;
-        self
+    pub fn retry_interval(&self) -> Duration {
+        self.retry_interval
     }
 
-    pub fn max_peers_per_round(mut self, max: Option<usize>) -> Self {
-        self.max_peers_per_round = max;
-        self
+    pub fn max_peers_per_round(&self) -> Option<usize> {
+        self.max_peers_per_round
+    }
+
+    pub fn dht_retries(&self) -> Option<usize> {
+        self.dht_retries
     }
 }
 
@@ -133,14 +177,16 @@ impl TopicDiscoveryHook {
         );
         tokio::spawn(async move {
             match timeout(Duration::from_secs(10), async {
-                while init_rx == udp_rx_bytes(paths.clone()) {
+                let mut c_rx = 0;
+                while init_rx == c_rx || c_rx == 0 {
+                    c_rx = udp_rx_bytes(paths.clone());
                     sleep(Duration::from_millis(100)).await;
                 }
             })
             .await
             {
                 Ok(_) => {
-                    tracing::info!(
+                    tracing::debug!(
                         "TopicDiscoveryHook: connection {} shows UDP activity, incrementing state, init={}, after={}",
                         peer_id.fmt_short(),
                         init_rx,
@@ -152,7 +198,7 @@ impl TopicDiscoveryHook {
                         }
                     }
                 }
-                Err(_) => tracing::info!(
+                Err(_) => tracing::debug!(
                     "TopicDiscoveryHook: connection {} did not show UDP activity within timeout, skipping state increment",
                     peer_id.fmt_short()
                 ),
@@ -352,7 +398,9 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
             tracing::warn!("subscribe_with_discovery: DHT init failed, retrying in 2s");
             tokio::time::sleep(Duration::from_secs(2)).await;
             tries += 1;
-            if tries > 5 {
+            if let Some(retries) = config.dht_retries()
+                && tries > retries
+            {
                 anyhow::bail!("DHT init failed after 5 attempts");
             }
         };
@@ -380,9 +428,16 @@ async fn init_dht() -> anyhow::Result<AsyncDht> {
         .as_async();
 
     tracing::info!("init_dht: waiting for DHT bootstrap... ");
-    if !dht.bootstrapped().await {
-        tracing::error!("init_dht: DHT bootstrap failed");
-        anyhow::bail!("DHT bootstrap failed");
+    match tokio::time::timeout(Duration::from_secs(15), dht.bootstrapped()).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::error!("init_dht: DHT bootstrap failed");
+            anyhow::bail!("DHT bootstrap failed");
+        }
+        Err(_) => {
+            tracing::error!("init_dht: DHT bootstrap timed out");
+            anyhow::bail!("DHT bootstrap timed out");
+        }
     }
 
     Ok(dht)
@@ -419,7 +474,10 @@ fn spawn_connector(
 
         match time::timeout(timeout, wait_for_connection).await {
             Ok(true) => {
-                state.increment_connected(peer);
+                tracing::info!(
+                    "connector: successfully connected to peer {}",
+                    peer.fmt_short()
+                );
             }
             Ok(false) => {
                 tracing::debug!(
@@ -469,14 +527,19 @@ fn spawn_announce_task(
             tracing::debug!("announce_task: round {round} starting");
 
             tracing::debug!("announce_task: announcing to DHT");
-            match dht.announce_signed_peer(id, &config.signing_key).await {
-                Ok(_) => {
+            match tokio::time::timeout(
+                Duration::from_secs(30),
+                dht.announce_signed_peer(id, &config.signing_key),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
                     tracing::info!("announce_task: DHT announce success");
                     backoff = Duration::from_secs(5);
                     tracing::debug!("announce_task: sleeping for {:?}", config.announce_interval);
                     tokio::time::sleep(config.announce_interval).await;
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::warn!(
                         "announce_task: DHT announce failed: {e}, retrying in {backoff:?}"
                     );
@@ -488,6 +551,13 @@ fn spawn_announce_task(
                     let mut stream = dht.get_signed_peers(id).await;
                     let _ = stream.next().await;
 
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(Duration::from_secs(60));
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "announce_task: DHT announce timed out, retrying in {backoff:?}"
+                    );
                     tokio::time::sleep(backoff).await;
                     backoff = (backoff * 2).min(Duration::from_secs(60));
                 }
@@ -572,7 +642,8 @@ fn spawn_discovery_task(
                 tracing::info!("discovery_task: spawned {spawned} connector tasks");
             }
 
-            let interval = if state.has_connections() {
+            let has_connection = state.has_connections();
+            let interval = if has_connection {
                 no_peer_backoff = config.discovery_interval_no_peers;
                 config.discovery_interval
             } else {
@@ -585,10 +656,21 @@ fn spawn_discovery_task(
             tracing::debug!(
                 "discovery_task: sleeping for {:?} (has_connections: {}, next_backoff: {:?})",
                 interval,
-                state.has_connections(),
+                has_connection,
                 no_peer_backoff
             );
             tokio::time::sleep(interval).await;
+            if !has_connection && state.has_connections() {
+                let additional_interval = config.discovery_interval.saturating_sub(interval);
+                no_peer_backoff = config.discovery_interval_no_peers;
+                tracing::debug!(
+                    "discovery_task: conn established during sleep, additional sleep for {:?} (has_connections: {}, next_backoff: {:?})",
+                    additional_interval,
+                    state.has_connections(),
+                    no_peer_backoff
+                );
+                tokio::time::sleep(additional_interval).await;
+            }
         }
         tracing::info!("discovery_task: stopped");
     })
