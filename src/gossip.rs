@@ -140,6 +140,8 @@ struct DiscoveryState {
     attempted: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
     /// How long before we retry a failed peer
     retry_interval: Duration,
+    /// Watchable neighbour count for gossip perspective
+    neighbour_count: Watchable<Option<usize>>,
 }
 
 #[derive(Debug, Clone)]
@@ -236,6 +238,7 @@ impl DiscoveryState {
             stopped: Arc::new(AtomicBool::new(false)),
             attempted: Arc::new(Mutex::new(HashMap::new())),
             retry_interval,
+            neighbour_count: Watchable::new(None),
         })
     }
 
@@ -248,7 +251,11 @@ impl DiscoveryState {
     }
 
     fn has_connections(&self) -> bool {
-        self.connected_count.get() > 0
+        if let Some(neigbour_count) = self.neighbour_count.get() {
+            neigbour_count > 0
+        } else {
+            self.connected_count.get() > 0
+        }
     }
 
     fn connection_count(&self) -> usize {
@@ -293,6 +300,10 @@ impl DiscoveryState {
             map.remove(&peer);
         }
     }
+
+    fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
+        self.neighbour_count.clone()
+    }
 }
 
 #[derive(Debug)]
@@ -316,6 +327,11 @@ impl TopicDiscoveryHandle {
 
     pub fn connection_count(&self) -> usize {
         self.state.connection_count()
+    }
+
+    #[doc(hidden)]
+    fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
+        self.state.neighbour_count_watcher()
     }
 }
 
@@ -355,7 +371,19 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
             .subscribe_with_discovery(topic_id, bootstrap_nodes, config)
             .await?;
         tracing::info!("subscribe_with_discovery_joined: waiting for receiver.joined()");
-        receiver.joined().await?;
+        let neighbour_count_watcher = handle.neighbour_count_watcher();
+        neighbour_count_watcher.set(Some(0)).ok();
+        while let Some(event) = receiver.next().await {
+            tracing::debug!("gossip_event: {:?}", event);
+            if receiver.is_joined() {
+                neighbour_count_watcher.set(Some(receiver.neighbors().count())).ok();
+                tracing::debug!("subscribe_with_discovery_joined: joined successfully");
+                break;
+            }
+            tracing::debug!("subscribe_with_discovery_joined: {:?}", receiver.neighbors().collect::<Vec<_>>());
+            sleep(Duration::from_millis(1000)).await;
+        }
+        //receiver.joined().await?;
         tracing::info!("subscribe_with_discovery_joined: joined successfully");
         Ok((sender, receiver, handle))
     }
@@ -463,13 +491,24 @@ fn spawn_connector(
         }
 
         let wait_for_connection = async {
-            let mut stream = state.connected_count.watch().stream();
-            while let Some(next_counter) = stream.next().await {
-                if next_counter > 0 {
-                    return true;
+            if state.neighbour_count_watcher().get().is_some() {
+                let mut stream = state.neighbour_count.watch().stream();
+                while let Some(Some(next_counter)) = stream.next().await {
+                    if next_counter > 0 {
+                        return true;
+                    }
                 }
+                false
+
+            } else {
+                let mut stream = state.connected_count.watch().stream();
+                while let Some(next_counter) = stream.next().await {
+                    if next_counter > 0 {
+                        return true;
+                    }
+                }
+                false
             }
-            false
         };
 
         match time::timeout(timeout, wait_for_connection).await {

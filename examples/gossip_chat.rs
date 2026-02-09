@@ -1,3 +1,4 @@
+use std::time::Duration;
 use dht::SigningKey;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, protocol::Router};
@@ -34,7 +35,8 @@ async fn main() -> anyhow::Result<()> {
 
     let topic_id = "testnet".as_bytes().to_vec();
     let config = TopicDiscoveryConfig::builder(signing_key, hook)
-        .max_peers_per_round(Some(10))
+        .max_peers_per_round(Some(5))
+        .connection_timeout(Duration::from_secs(10))
         .dht_retries(None)
         .build();
 
