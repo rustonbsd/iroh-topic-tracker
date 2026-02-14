@@ -43,7 +43,7 @@ Add to `Cargo.toml`:
 [dependencies]
 iroh = "0.96"
 iroh-gossip = "0.96"
-iroh-topic-tracker = { git="https://github.com/rustonbsd/iroh-topic-tracker", branch="reweite" }
+iroh-topic-tracker = { git="https://github.com/rustonbsd/iroh-topic-tracker", branch="rewrite" }
 ```
 
 Subscribe to a topic with automatic discovery:
