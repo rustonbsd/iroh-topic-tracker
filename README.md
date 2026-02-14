@@ -32,7 +32,7 @@ sequenceDiagram
 ## Features
 
 - **Signed Discovery:** Using `announce_signed_peer` / `get_signed_peers` extensions.
-- **Zero Config:** Relies on public DHT nodes supporting the extension (at the moment there is only one bootstrap node with the extension and [MTU increase fix](https://github.com/Nuhvi/mainline/pull/36) to make this work.
+- **Zero Config:** Relies on public DHT nodes supporting the extension
 - **Secure:** Prevents identity spoofing via Ed25519 signatures. (todo: check signature validity)
 
 ## Usage
@@ -41,53 +41,74 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-iroh = "0.95"
-iroh-gossip = "0.95"
-iroh-topic-tracker = "0.2"
+iroh = "0.96"
+iroh-gossip = "0.96"
+iroh-topic-tracker = { git="https://github.com/rustonbsd/iroh-topic-tracker", branch="reweite" }
 ```
 
 Subscribe to a topic with automatic discovery:
 
 ```rust
-use iroh::Endpoint;
+use std::time::Duration;
+use dht::SigningKey;
+use futures_lite::StreamExt;
+use iroh::{Endpoint, SecretKey, protocol::Router};
 use iroh_gossip::net::Gossip;
-use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
+
+use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHook};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Create keys and Endpoint
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("iroh_topic_tracker=debug,gossip_chat=debug,warn")
+            }),
+        )
+        .init();
+
     let secret_key = SecretKey::generate(&mut rand::rng());
     let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
+    let hook = TopicDiscoveryHook::new();
     let endpoint = Endpoint::builder()
         .secret_key(secret_key.clone())
+        .hooks(hook.clone())
         .bind()
         .await?;
 
-    // 2. Setup iroh-gossip as usual
     let gossip = Gossip::builder().spawn(endpoint.clone());
 
-    // 3. Register gossip protocol with Router
     let _router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
         .spawn();
-      
-    // 4. Set topic and discovery config
-    let topic_id = "my_top22c".as_bytes().to_vec();
-    let config = TopicDiscoveryConfig::new(signing_key);
 
+    let topic_id = "testnet".as_bytes().to_vec();
+    let config = TopicDiscoveryConfig::builder(signing_key, hook)
+        .max_peers_per_round(Some(5))
+        .connection_timeout(Duration::from_secs(10))
+        .dht_retries(None)
+        .build();
 
-    // 4. Subscribe and start discovery
+    tracing::info!("Starting subscription to topic...");
     let (sender, mut receiver, discovery_handle) = gossip
-        .subscribe_with_discovery_joined(topic_id, vec![], endpoint.clone(), config)
+        .subscribe_with_discovery_joined(topic_id, vec![], config)
         .await?;
-    
-    // Use sender/receiver as normal...
 
-    // drop discovery handle to stop discovery when done
-    drop(discovery_handle);
+    tracing::info!("Subscribed to topic and joined the network.");
+
+    tracing::info!("Broadcasting hello world...");
+    sender
+        .broadcast(format!("hello world {}", rand::random::<u32>()).into())
+        .await?;
+
+
+    discovery_handle.stop();
+
     Ok(())
 }
+
 ```
 
 ## References
