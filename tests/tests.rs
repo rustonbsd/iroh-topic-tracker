@@ -20,13 +20,13 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     let signing_key1 = SigningKey::from_bytes(&secret_key1.to_bytes());
     let hook_1 = TopicDiscoveryHook::new();
 
-    let endpoint0 = Endpoint::builder()
+    let endpoint0 = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key0)
         .hooks(hook_0.clone())
         .bind()
         .await?;
 
-    let endpoint1 = Endpoint::builder()
+    let endpoint1 = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key1)
         .hooks(hook_1.clone())
         .bind()

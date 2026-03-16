@@ -215,7 +215,7 @@ fn udp_rx_bytes(
     paths
         .get()
         .iter()
-        .map(|path| path.stats().udp_rx.bytes)
+        .filter_map(|path| path.stats().map(|stats| stats.udp_rx.bytes))
         .reduce(|a, b| a + b)
         .unwrap_or_default()
 }
@@ -383,6 +383,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
             tracing::debug!("subscribe_with_discovery_joined: {:?}", receiver.neighbors().collect::<Vec<_>>());
             sleep(Duration::from_millis(1000)).await;
         }
+        neighbour_count_watcher.set(None).ok();
         //receiver.joined().await?;
         tracing::info!("subscribe_with_discovery_joined: joined successfully");
         Ok((sender, receiver, handle))

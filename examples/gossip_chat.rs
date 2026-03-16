@@ -1,7 +1,7 @@
 use std::time::Duration;
 use dht::SigningKey;
 use futures_lite::StreamExt;
-use iroh::{Endpoint, SecretKey, protocol::Router};
+use iroh::{Endpoint, SecretKey, endpoint::presets, protocol::Router};
 use iroh_gossip::net::Gossip;
 
 use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHook};
@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
     let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
     let hook = TopicDiscoveryHook::new();
-    let endpoint = Endpoint::builder()
+    let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key.clone())
         .hooks(hook.clone())
         .bind()
