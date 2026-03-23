@@ -37,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
     let config = TopicDiscoveryConfig::builder(signing_key, hook)
         .max_peers_per_round(Some(5))
         .connection_timeout(Duration::from_secs(10))
+        .first_connected_duration(Some(Duration::from_secs(60)))
+        .discovery_interval_first_connected(Duration::from_secs(4))
         .dht_retries(None)
         .build();
 

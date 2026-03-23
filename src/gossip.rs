@@ -29,6 +29,10 @@ pub struct TopicDiscoveryConfig {
     announce_interval: Duration,
     /// Discovery interval when we have peers (default: 60s)
     discovery_interval: Duration,
+    /// Discovery interval after we first started connecting for first_connected_duration (default: 10s)
+    first_connected_duration: Option<Duration>,
+    /// Discovery interval after we first connected for first_connected_duration (default: 5s)
+    discovery_interval_first_connected: Duration,
     /// Discovery interval when we have no peers (default: 2s) - aggressive mode
     discovery_interval_no_peers: Duration,
     /// Timeout for individual connection attempts (default: 5s)
@@ -56,6 +60,16 @@ impl ConfigBuilder {
 
     pub fn discovery_interval_no_peers(mut self, interval: Duration) -> Self {
         self.0.discovery_interval_no_peers = interval;
+        self
+    }
+
+    pub fn discovery_interval_first_connected(mut self, interval: Duration) -> Self {
+        self.0.discovery_interval_first_connected = interval;
+        self
+    }
+
+    pub fn first_connected_duration(mut self, duration: Option<Duration>) -> Self {
+        self.0.first_connected_duration = duration;
         self
     }
 
@@ -91,6 +105,8 @@ impl TopicDiscoveryConfig {
             hook,
             announce_interval: Duration::from_secs(300),
             discovery_interval: Duration::from_secs(60),
+            first_connected_duration: Some(Duration::from_secs(60)),
+            discovery_interval_first_connected: Duration::from_secs(5),
             discovery_interval_no_peers: Duration::from_secs(2),
             connection_timeout: Duration::from_secs(5),
             retry_interval: Duration::from_secs(300),
@@ -142,6 +158,8 @@ struct DiscoveryState {
     retry_interval: Duration,
     /// Watchable neighbour count for gossip perspective
     neighbour_count: Watchable<Option<usize>>,
+    /// First connection timestamp to switch discovery intervals
+    first_connected_timestamp: Watchable<Option<Instant>>,
 }
 
 #[derive(Debug, Clone)]
@@ -225,7 +243,9 @@ impl EndpointHooks for TopicDiscoveryHook {
         &'a self,
         conn: &'a iroh::endpoint::ConnectionInfo,
     ) -> iroh::endpoint::AfterHandshakeOutcome {
-        self.increment_connected(conn);
+        if conn.alpn() == iroh_gossip::ALPN {
+            self.increment_connected(conn);
+        }
         iroh::endpoint::AfterHandshakeOutcome::accept()
     }
 }
@@ -239,6 +259,7 @@ impl DiscoveryState {
             attempted: Arc::new(Mutex::new(HashMap::new())),
             retry_interval,
             neighbour_count: Watchable::new(None),
+            first_connected_timestamp: Watchable::new(None),
         })
     }
 
@@ -269,6 +290,11 @@ impl DiscoveryState {
             self.connected_count
                 .set(self.connected_count.get() + 1)
                 .ok();
+            if self.first_connected_timestamp.get().is_none() {
+                self.first_connected_timestamp
+                    .set(Some(Instant::now()))
+                    .ok();
+            }
         }
     }
 
@@ -304,6 +330,21 @@ impl DiscoveryState {
     fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
         self.neighbour_count.clone()
     }
+
+    fn first_connected_timestamp_watcher(&self) -> Watchable<Option<Instant>> {
+        self.first_connected_timestamp.clone()
+    }
+
+    fn first_connected_phase(&self, config: &TopicDiscoveryConfig) -> bool {
+        if let Some(timestamp) = self.first_connected_timestamp_watcher().get()
+            && let Some(first_connected_duration) = config.first_connected_duration
+            && timestamp.elapsed() < first_connected_duration
+        {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -332,6 +373,14 @@ impl TopicDiscoveryHandle {
     #[doc(hidden)]
     fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
         self.state.neighbour_count_watcher()
+    }
+
+    pub fn get_connected_peers(&self) -> Vec<EndpointId> {
+        if let Ok(peers) = self.state.connected_peers.lock() {
+            peers.iter().cloned().collect()
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -376,11 +425,16 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         while let Some(event) = receiver.next().await {
             tracing::debug!("gossip_event: {:?}", event);
             if receiver.is_joined() {
-                neighbour_count_watcher.set(Some(receiver.neighbors().count())).ok();
+                neighbour_count_watcher
+                    .set(Some(receiver.neighbors().count()))
+                    .ok();
                 tracing::debug!("subscribe_with_discovery_joined: joined successfully");
                 break;
             }
-            tracing::debug!("subscribe_with_discovery_joined: {:?}", receiver.neighbors().collect::<Vec<_>>());
+            tracing::debug!(
+                "subscribe_with_discovery_joined: {:?}",
+                receiver.neighbors().collect::<Vec<_>>()
+            );
             sleep(Duration::from_millis(1000)).await;
         }
         neighbour_count_watcher.set(None).ok();
@@ -500,7 +554,6 @@ fn spawn_connector(
                     }
                 }
                 false
-
             } else {
                 let mut stream = state.connected_count.watch().stream();
                 while let Some(next_counter) = stream.next().await {
@@ -685,7 +738,11 @@ fn spawn_discovery_task(
             let has_connection = state.has_connections();
             let interval = if has_connection {
                 no_peer_backoff = config.discovery_interval_no_peers;
-                config.discovery_interval
+                if state.first_connected_phase(&config) {
+                    config.discovery_interval_first_connected
+                } else {
+                    config.discovery_interval
+                }
             } else {
                 let current = no_peer_backoff;
                 no_peer_backoff =
@@ -701,7 +758,12 @@ fn spawn_discovery_task(
             );
             tokio::time::sleep(interval).await;
             if !has_connection && state.has_connections() {
-                let additional_interval = config.discovery_interval.saturating_sub(interval);
+                let additional_interval = if state.first_connected_phase(&config) {
+                    config.discovery_interval_first_connected
+                } else {
+                    config.discovery_interval
+                }
+                .saturating_sub(interval);
                 no_peer_backoff = config.discovery_interval_no_peers;
                 tracing::debug!(
                     "discovery_task: conn established during sleep, additional sleep for {:?} (has_connections: {}, next_backoff: {:?})",
