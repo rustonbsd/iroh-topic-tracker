@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let secret_key = SecretKey::generate(&mut rand::rng());
+    let secret_key = SecretKey::generate();
     let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
     let hook = TopicDiscoveryHook::new();
