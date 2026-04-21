@@ -12,11 +12,11 @@ use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscovery
 #[tokio::test(flavor = "multi_thread")]
 async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Create two endpoints with different node IDs
-    let secret_key0 = SecretKey::generate(&mut rand::rng());
+    let secret_key0 = SecretKey::generate();
     let signing_key0 = SigningKey::from_bytes(&secret_key0.to_bytes());
     let hook_0 = TopicDiscoveryHook::new();
 
-    let secret_key1 = SecretKey::generate(&mut rand::rng());
+    let secret_key1 = SecretKey::generate();
     let signing_key1 = SigningKey::from_bytes(&secret_key1.to_bytes());
     let hook_1 = TopicDiscoveryHook::new();
 
