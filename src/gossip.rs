@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeSet, HashMap},
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -18,7 +18,10 @@ use iroh_gossip::api::{GossipReceiver, GossipSender};
 use n0_future::time;
 use n0_watcher::Watchable;
 use sha2::Digest;
-use tokio::time::{sleep, timeout};
+use tokio::{
+    sync::Mutex,
+    time::{sleep, timeout},
+};
 
 #[derive(Debug, Clone)]
 pub struct TopicDiscoveryConfig {
@@ -180,10 +183,9 @@ impl TopicDiscoveryHook {
         }
     }
 
-    fn add_state(&self, state: &DiscoveryState) {
-        if let Ok(mut states) = self.states.lock() {
-            states.push(state.clone());
-        }
+    async fn add_state(&self, state: &DiscoveryState) {
+        let mut states = self.states.lock().await;
+        states.push(state.clone());
     }
 
     fn increment_connected(&self, conn_info: &ConnectionInfo) {
@@ -212,10 +214,9 @@ impl TopicDiscoveryHook {
                         init_rx,
                         udp_rx_bytes(paths.clone())
                     );
-                    if let Ok(states) = states.lock() {
-                        for state in states.iter() {
-                            state.increment_connected(peer_id);
-                        }
+                    let guard = states.lock().await;
+                    for state in guard.iter() {
+                        state.increment_connected(peer_id).await;
                     }
                 }
                 Err(_) => tracing::debug!(
@@ -283,10 +284,9 @@ impl DiscoveryState {
         self.connected_count.get()
     }
 
-    fn increment_connected(&self, peer_id: EndpointId) {
-        if let Ok(mut peers) = self.connected_peers.lock()
-            && peers.insert(peer_id)
-        {
+    async fn increment_connected(&self, peer_id: EndpointId) {
+        let mut peers = self.connected_peers.lock().await;
+        if peers.insert(peer_id) {
             self.connected_count
                 .set(self.connected_count.get() + 1)
                 .ok();
@@ -300,31 +300,27 @@ impl DiscoveryState {
 
     /// Mark a peer as attempted. Returns true if we should try to connect
     /// (either new peer, or retry interval has elapsed).
-    fn should_attempt(&self, peer: [u8; 32]) -> bool {
-        if let Ok(mut map) = self.attempted.lock() {
-            match map.get(&peer) {
-                None => {
+    async fn should_attempt(&self, peer: [u8; 32]) -> bool {
+        let mut map = self.attempted.lock().await;
+        match map.get(&peer) {
+            None => {
+                map.insert(peer, Instant::now());
+                true
+            }
+            Some(last_attempt) => {
+                if last_attempt.elapsed() > self.retry_interval {
                     map.insert(peer, Instant::now());
                     true
-                }
-                Some(last_attempt) => {
-                    if last_attempt.elapsed() > self.retry_interval {
-                        map.insert(peer, Instant::now());
-                        true
-                    } else {
-                        false
-                    }
+                } else {
+                    false
                 }
             }
-        } else {
-            false
         }
     }
 
-    fn reset_attempt(&self, peer: [u8; 32]) {
-        if let Ok(mut map) = self.attempted.lock() {
-            map.remove(&peer);
-        }
+    async fn reset_attempt(&self, peer: [u8; 32]) {
+        let mut map = self.attempted.lock().await;
+        map.remove(&peer);
     }
 
     fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
@@ -375,12 +371,9 @@ impl TopicDiscoveryHandle {
         self.state.neighbour_count_watcher()
     }
 
-    pub fn get_connected_peers(&self) -> Vec<EndpointId> {
-        if let Ok(peers) = self.state.connected_peers.lock() {
-            peers.iter().cloned().collect()
-        } else {
-            vec![]
-        }
+    pub async fn get_connected_peers(&self) -> Vec<EndpointId> {
+        let peers = self.state.connected_peers.lock().await;
+        peers.iter().cloned().collect()
     }
 }
 
@@ -470,7 +463,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         );
 
         let state = DiscoveryState::new(config.retry_interval);
-        config.hook.add_state(&state);
+        config.hook.add_state(&state).await;
 
         tracing::info!("subscribe_with_discovery: initializing shared DHT");
         let mut tries = 0;
@@ -579,7 +572,7 @@ fn spawn_connector(
                 );
 
                 if !state.has_connections() {
-                    state.reset_attempt(*peer.as_bytes());
+                    state.reset_attempt(*peer.as_bytes()).await;
                 }
             }
             Err(_) => {
@@ -589,7 +582,7 @@ fn spawn_connector(
                     timeout
                 );
                 if !state.has_connections() {
-                    state.reset_attempt(*peer.as_bytes());
+                    state.reset_attempt(*peer.as_bytes()).await;
                 }
             }
         }
@@ -711,7 +704,7 @@ fn spawn_discovery_task(
                     continue;
                 }
 
-                if !state.should_attempt(*key_bytes) {
+                if !state.should_attempt(*key_bytes).await {
                     continue;
                 }
 
