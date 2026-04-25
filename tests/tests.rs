@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use dht::SigningKey;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, protocol::Router};
 use iroh_gossip::api::Event;
@@ -13,10 +12,8 @@ use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Create two endpoints with different node IDs
     let secret_key0 = SecretKey::generate();
-    let signing_key0 = SigningKey::from_bytes(&secret_key0.to_bytes());
 
     let secret_key1 = SecretKey::generate();
-    let signing_key1 = SigningKey::from_bytes(&secret_key1.to_bytes());
 
     let endpoint0 = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key0)
@@ -42,11 +39,11 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Test topic - using a unique topic for this test
     let topic_id = format!("test_topic_{}", rand::random::<u32>()).into_bytes();
 
-    let config0 = TopicDiscoveryConfig::builder(signing_key0)
+    let config0 = TopicDiscoveryConfig::builder(endpoint0)
         .max_peers_per_round(Some(5))
         .build();
 
-    let config1 = TopicDiscoveryConfig::builder(signing_key1)
+    let config1 = TopicDiscoveryConfig::builder(endpoint1)
         .max_peers_per_round(Some(5))
         .build();
 
