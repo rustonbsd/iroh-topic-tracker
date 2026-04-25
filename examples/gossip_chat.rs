@@ -46,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Subscribed to topic and joined the network.");
     println!("Subscribed to topic and joined the network.");
 
+    println!("Neighbors: {:?}", discovery_handle.added_neighbors().await);
+
     tracing::info!("Broadcasting hello world...");
     sender
         .broadcast(format!("hello world {}", rand::random::<u32>()).into())
