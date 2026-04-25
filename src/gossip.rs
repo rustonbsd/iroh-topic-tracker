@@ -144,7 +144,7 @@ impl TopicDiscoveryConfig {
 #[derive(Debug, Clone)]
 struct DiscoveryState {
     /// Number of peers we've successfully joined to gossip
-    once_connected_neighbors: Watchable<HashSet<EndpointId>>,
+    once_connected_neighbors: Arc<Mutex<HashSet<EndpointId>>>,
     /// Signal to stop all tasks
     stopped: Arc<AtomicBool>,
     /// Peers we've attempted to connect to, with timestamp for retry logic
@@ -158,7 +158,7 @@ struct DiscoveryState {
 impl DiscoveryState {
     fn new(retry_interval: Duration) -> Arc<Self> {
         Arc::new(Self {
-            once_connected_neighbors: Watchable::new(HashSet::new()),
+            once_connected_neighbors: Arc::new(Mutex::new(HashSet::new())),
             stopped: Arc::new(AtomicBool::new(false)),
             attempted: Arc::new(Mutex::new(HashMap::new())),
             retry_interval,
@@ -174,16 +174,18 @@ impl DiscoveryState {
         self.stopped.load(Ordering::Relaxed)
     }
 
-    fn has_connections(&self) -> bool {
-        !self.once_connected_neighbors.get().is_empty()
+    async fn has_connections(&self) -> bool {
+        let guard = self.once_connected_neighbors.lock().await;
+        !guard.is_empty()
     }
 
-    fn added_connection_count(&self) -> usize {
-        self.once_connected_neighbors.get().len()
+    async fn added_connection_count(&self) -> usize {
+        let guard = self.once_connected_neighbors.lock().await;
+        guard.len()
     }
 
     // All historically connected peers with (at least once) open connections at some point
-    fn added_neighbors(&self) -> Watchable<HashSet<EndpointId>> {
+    fn added_neighbors(&self) -> Arc<Mutex<HashSet<EndpointId>>> {
         self.once_connected_neighbors.clone()
     }
 
@@ -243,18 +245,20 @@ impl TopicDiscoveryHandle {
         !self.state.is_stopped()
     }
 
-    pub fn has_connections(&self) -> bool {
-        self.state.has_connections()
+    pub async fn has_connections(&self) -> bool {
+        self.state.has_connections().await
     }
 
-    pub fn added_connection_count(&self) -> usize {
-        self.state.added_connection_count()
+    pub async fn added_connection_count(&self) -> usize {
+        self.state.added_connection_count().await
     }
 
     /// Adds new neighbors as soon as a path is available.
     /// NOTE: does NOT remove neighbors that go down
-    pub fn added_neighbors(&self) -> HashSet<EndpointId> {
-        self.state.added_neighbors().get()
+    pub async fn added_neighbors(&self) -> HashSet<EndpointId> {
+        let mtx = self.state.added_neighbors();
+        let guard = mtx.lock().await;
+        guard.clone()
     }
 }
 
@@ -295,6 +299,10 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
             .await?;
         tracing::info!("subscribe_with_discovery_joined: waiting for receiver.joined()");
         receiver.joined().await?;
+
+        while handle.added_connection_count().await < 1 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         tracing::info!("subscribe_with_discovery_joined: joined successfully");
         Ok((sender, receiver, handle))
     }
@@ -420,6 +428,8 @@ fn spawn_connector(
                     "connector: successfully connected to peer {}",
                     peer.fmt_short()
                 );
+                let mut guard = state.once_connected_neighbors.lock().await;
+                guard.insert(peer);
                 return;
             }
             Ok(false) => {
@@ -533,7 +543,7 @@ fn spawn_discovery_task(
             round = round.saturating_add(1);
             tracing::debug!(
                 "discovery_task: round {round} starting (connected: {}, backoff: {:?})",
-                state.added_connection_count(),
+                state.added_connection_count().await,
                 no_peer_backoff
             );
 
@@ -581,7 +591,7 @@ fn spawn_discovery_task(
                 tracing::info!("discovery_task: spawned {spawned} connector tasks");
             }
 
-            let has_connection = state.has_connections();
+            let has_connection = state.has_connections().await;
             let interval = if has_connection {
                 no_peer_backoff = config.discovery_interval_no_peers;
                 if state.first_connected_phase(&config) {
@@ -603,7 +613,7 @@ fn spawn_discovery_task(
                 no_peer_backoff
             );
             tokio::time::sleep(interval).await;
-            if !has_connection && state.has_connections() {
+            if !has_connection && state.has_connections().await {
                 let additional_interval = if state.first_connected_phase(&config) {
                     config.discovery_interval_first_connected
                 } else {
@@ -614,7 +624,7 @@ fn spawn_discovery_task(
                 tracing::debug!(
                     "discovery_task: conn established during sleep, additional sleep for {:?} (has_connections: {}, next_backoff: {:?})",
                     additional_interval,
-                    state.has_connections(),
+                    state.has_connections().await,
                     no_peer_backoff
                 );
                 tokio::time::sleep(additional_interval).await;
