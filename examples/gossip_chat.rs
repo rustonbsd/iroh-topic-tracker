@@ -4,7 +4,7 @@ use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, endpoint::presets, protocol::Router};
 use iroh_gossip::net::Gossip;
 
-use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHook};
+use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -20,10 +20,8 @@ async fn main() -> anyhow::Result<()> {
     let secret_key = SecretKey::generate();
     let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
-    let hook = TopicDiscoveryHook::new();
     let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key.clone())
-        .hooks(hook.clone())
         .bind()
         .await?;
 
@@ -34,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .spawn();
 
     let topic_id = "testnet".as_bytes().to_vec();
-    let config = TopicDiscoveryConfig::builder(signing_key, hook)
+    let config = TopicDiscoveryConfig::builder(signing_key)
         .max_peers_per_round(Some(5))
         .connection_timeout(Duration::from_secs(10))
         .first_connected_duration(Some(Duration::from_secs(60)))

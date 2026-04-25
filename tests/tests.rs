@@ -7,28 +7,24 @@ use iroh_gossip::api::Event;
 use iroh_gossip::net::Gossip;
 use tokio::time::timeout;
 
-use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt, TopicDiscoveryHook};
+use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Create two endpoints with different node IDs
     let secret_key0 = SecretKey::generate();
     let signing_key0 = SigningKey::from_bytes(&secret_key0.to_bytes());
-    let hook_0 = TopicDiscoveryHook::new();
 
     let secret_key1 = SecretKey::generate();
     let signing_key1 = SigningKey::from_bytes(&secret_key1.to_bytes());
-    let hook_1 = TopicDiscoveryHook::new();
 
     let endpoint0 = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key0)
-        .hooks(hook_0.clone())
         .bind()
         .await?;
 
     let endpoint1 = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key1)
-        .hooks(hook_1.clone())
         .bind()
         .await?;
 
@@ -46,11 +42,11 @@ async fn topic_tracker_gossip_integration_test() -> anyhow::Result<()> {
     // Test topic - using a unique topic for this test
     let topic_id = format!("test_topic_{}", rand::random::<u32>()).into_bytes();
 
-    let config0 = TopicDiscoveryConfig::builder(signing_key0, hook_0)
+    let config0 = TopicDiscoveryConfig::builder(signing_key0)
         .max_peers_per_round(Some(5))
         .build();
 
-    let config1 = TopicDiscoveryConfig::builder(signing_key1, hook_1)
+    let config1 = TopicDiscoveryConfig::builder(signing_key1)
         .max_peers_per_round(Some(5))
         .build();
 
