@@ -1,5 +1,4 @@
 use std::time::Duration;
-use dht::SigningKey;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, endpoint::presets, protocol::Router};
 use iroh_gossip::net::Gossip;
@@ -18,7 +17,6 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let secret_key = SecretKey::generate();
-    let signing_key = SigningKey::from_bytes(&secret_key.to_bytes());
 
     let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key.clone())
@@ -32,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .spawn();
 
     let topic_id = "testnet".as_bytes().to_vec();
-    let config = TopicDiscoveryConfig::builder(signing_key)
+    let config = TopicDiscoveryConfig::builder(endpoint)
         .max_peers_per_round(Some(5))
         .connection_timeout(Duration::from_secs(10))
         .first_connected_duration(Some(Duration::from_secs(60)))

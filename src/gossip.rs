@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -10,15 +10,17 @@ use std::{
 use dht::async_dht::AsyncDht;
 use ed25519_dalek::SigningKey;
 use futures_lite::StreamExt;
-use iroh::{EndpointId, Watcher};
+use iroh::{Endpoint, EndpointId};
 use iroh_gossip::api::{GossipReceiver, GossipSender};
 use n0_future::time;
 use n0_watcher::Watchable;
 use sha2::Digest;
-use tokio::{sync::Mutex, time::sleep};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct TopicDiscoveryConfig {
+    endpoint: Endpoint,
+
     signing_key: SigningKey,
     /// How often to re-announce to DHT (default: 5 minutes)
     announce_interval: Duration,
@@ -94,9 +96,10 @@ impl ConfigBuilder {
 }
 
 impl TopicDiscoveryConfig {
-    pub fn builder(signing_key: SigningKey) -> ConfigBuilder {
+    pub fn builder(endpoint: Endpoint) -> ConfigBuilder {
         ConfigBuilder(Self {
-            signing_key,
+            signing_key: endpoint.secret_key().to_bytes().into(),
+            endpoint,
             announce_interval: Duration::from_secs(300),
             discovery_interval: Duration::from_secs(60),
             first_connected_duration: Some(Duration::from_secs(60)),
@@ -141,15 +144,13 @@ impl TopicDiscoveryConfig {
 #[derive(Debug, Clone)]
 struct DiscoveryState {
     /// Number of peers we've successfully joined to gossip
-    connected_count: Watchable<usize>,
+    once_connected_neighbors: Watchable<HashSet<EndpointId>>,
     /// Signal to stop all tasks
     stopped: Arc<AtomicBool>,
     /// Peers we've attempted to connect to, with timestamp for retry logic
     attempted: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
     /// How long before we retry a failed peer
     retry_interval: Duration,
-    /// Watchable neighbour count for gossip perspective
-    neighbour_count: Watchable<Option<usize>>,
     /// First connection timestamp to switch discovery intervals
     first_connected_timestamp: Watchable<Option<Instant>>,
 }
@@ -157,11 +158,10 @@ struct DiscoveryState {
 impl DiscoveryState {
     fn new(retry_interval: Duration) -> Arc<Self> {
         Arc::new(Self {
-            connected_count: Watchable::new(0),
+            once_connected_neighbors: Watchable::new(HashSet::new()),
             stopped: Arc::new(AtomicBool::new(false)),
             attempted: Arc::new(Mutex::new(HashMap::new())),
             retry_interval,
-            neighbour_count: Watchable::new(None),
             first_connected_timestamp: Watchable::new(None),
         })
     }
@@ -175,15 +175,16 @@ impl DiscoveryState {
     }
 
     fn has_connections(&self) -> bool {
-        if let Some(neigbour_count) = self.neighbour_count.get() {
-            neigbour_count > 0
-        } else {
-            self.connected_count.get() > 0
-        }
+        !self.once_connected_neighbors.get().is_empty()
     }
 
-    fn connection_count(&self) -> usize {
-        self.connected_count.get()
+    fn added_connection_count(&self) -> usize {
+        self.once_connected_neighbors.get().len()
+    }
+
+    // All historically connected peers with (at least once) open connections at some point
+    fn added_neighbors(&self) -> Watchable<HashSet<EndpointId>> {
+        self.once_connected_neighbors.clone()
     }
 
     /// Mark a peer as attempted. Returns true if we should try to connect
@@ -209,10 +210,6 @@ impl DiscoveryState {
     async fn reset_attempt(&self, peer: [u8; 32]) {
         let mut map = self.attempted.lock().await;
         map.remove(&peer);
-    }
-
-    fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
-        self.neighbour_count.clone()
     }
 
     fn first_connected_timestamp_watcher(&self) -> Watchable<Option<Instant>> {
@@ -250,13 +247,14 @@ impl TopicDiscoveryHandle {
         self.state.has_connections()
     }
 
-    pub fn connection_count(&self) -> usize {
-        self.state.connection_count()
+    pub fn added_connection_count(&self) -> usize {
+        self.state.added_connection_count()
     }
 
-    #[doc(hidden)]
-    fn neighbour_count_watcher(&self) -> Watchable<Option<usize>> {
-        self.state.neighbour_count_watcher()
+    /// Adds new neighbors as soon as a path is available.
+    /// NOTE: does NOT remove neighbors that go down
+    pub fn added_neighbors(&self) -> HashSet<EndpointId> {
+        self.state.added_neighbors().get()
     }
 }
 
@@ -296,25 +294,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
             .subscribe_with_discovery(topic_id, bootstrap_nodes, config)
             .await?;
         tracing::info!("subscribe_with_discovery_joined: waiting for receiver.joined()");
-        let neighbour_count_watcher = handle.neighbour_count_watcher();
-        neighbour_count_watcher.set(Some(0)).ok();
-        while let Some(event) = receiver.next().await {
-            tracing::debug!("gossip_event: {:?}", event);
-            if receiver.is_joined() {
-                neighbour_count_watcher
-                    .set(Some(receiver.neighbors().count()))
-                    .ok();
-                tracing::debug!("subscribe_with_discovery_joined: joined successfully");
-                break;
-            }
-            tracing::debug!(
-                "subscribe_with_discovery_joined: {:?}",
-                receiver.neighbors().collect::<Vec<_>>()
-            );
-            sleep(Duration::from_millis(1000)).await;
-        }
-        neighbour_count_watcher.set(None).ok();
-        //receiver.joined().await?;
+        receiver.joined().await?;
         tracing::info!("subscribe_with_discovery_joined: joined successfully");
         Ok((sender, receiver, handle))
     }
@@ -406,6 +386,7 @@ fn spawn_connector(
     gossip_sender: GossipSender,
     peer: EndpointId,
     timeout: Duration,
+    endpoint: Endpoint,
 ) {
     tokio::spawn(async move {
         if state.is_stopped() {
@@ -421,22 +402,15 @@ fn spawn_connector(
         }
 
         let wait_for_connection = async {
-            if state.neighbour_count_watcher().get().is_some() {
-                let mut stream = state.neighbour_count.watch().stream();
-                while let Some(Some(next_counter)) = stream.next().await {
-                    if next_counter > 0 {
-                        return true;
-                    }
+            loop {
+                if let Some(remote_info) = endpoint.remote_info(peer).await
+                    && remote_info.addrs().any(|addr| {
+                        matches!(addr.usage(), iroh::endpoint::TransportAddrUsage::Active)
+                    })
+                {
+                    return true;
                 }
-                false
-            } else {
-                let mut stream = state.connected_count.watch().stream();
-                while let Some(next_counter) = stream.next().await {
-                    if next_counter > 0 {
-                        return true;
-                    }
-                }
-                false
+                tokio::time::sleep(Duration::from_millis(250)).await;
             }
         };
 
@@ -446,16 +420,13 @@ fn spawn_connector(
                     "connector: successfully connected to peer {}",
                     peer.fmt_short()
                 );
+                return;
             }
             Ok(false) => {
                 tracing::debug!(
                     "connector: stopped while waiting for connection to {}",
                     peer.fmt_short()
                 );
-
-                if !state.has_connections() {
-                    state.reset_attempt(*peer.as_bytes()).await;
-                }
             }
             Err(_) => {
                 tracing::warn!(
@@ -463,11 +434,10 @@ fn spawn_connector(
                     peer.fmt_short(),
                     timeout
                 );
-                if !state.has_connections() {
-                    state.reset_attempt(*peer.as_bytes()).await;
-                }
             }
         }
+
+        state.reset_attempt(*peer.as_bytes()).await;
     });
 }
 
@@ -560,10 +530,10 @@ fn spawn_discovery_task(
         };
 
         while !state.is_stopped() {
-            round += 1;
+            round = round.saturating_add(1);
             tracing::debug!(
                 "discovery_task: round {round} starting (connected: {}, backoff: {:?})",
-                state.connection_count(),
+                state.added_connection_count(),
                 no_peer_backoff
             );
 
@@ -577,7 +547,7 @@ fn spawn_discovery_task(
             .await;
             tracing::debug!("discovery_task: found {} peers from DHT", peers.len());
 
-            let mut spawned = 0;
+            let mut spawned: usize = 0;
             for key_bytes in peers
                 .iter()
                 .take(config.max_peers_per_round.unwrap_or(usize::MAX))
@@ -602,8 +572,9 @@ fn spawn_discovery_task(
                     gossip_sender.clone(),
                     peer,
                     config.connection_timeout,
+                    config.endpoint.clone(),
                 );
-                spawned += 1;
+                spawned = spawned.saturating_add(1);
             }
 
             if spawned > 0 {
