@@ -41,8 +41,8 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-iroh = "0.98"
-iroh-gossip = "0.98"
+iroh = "1.0.0-rc.0"
+iroh-gossip = "0.99"
 iroh-topic-tracker = { git="https://github.com/rustonbsd/iroh-topic-tracker", branch="rewrite-removed-endpointhook" }
 ```
 
