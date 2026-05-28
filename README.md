@@ -33,7 +33,7 @@ sequenceDiagram
 
 - Ed25519 signature based discovery using `announce_signed_peer` / `get_signed_peers` extensions.
 - Relies on public DHT nodes supporting the extension (e.g. Mainline DHT with PR #174, there are two atm to my knowledge + all iroh-topic-tracker participants).
-- Prevents identity spoofing via Ed25519 signatures. (todo: check signature validity)
+- Prevents identity spoofing via Ed25519 signatures.
 
 ## Usage
 
