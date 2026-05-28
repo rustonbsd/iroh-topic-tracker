@@ -31,9 +31,9 @@ sequenceDiagram
 
 ## Features
 
-- **Signed Discovery:** Using `announce_signed_peer` / `get_signed_peers` extensions.
-- **Zero Config:** Relies on public DHT nodes supporting the extension
-- **Secure:** Prevents identity spoofing via Ed25519 signatures. (todo: check signature validity)
+- Ed25519 signature based discovery using `announce_signed_peer` / `get_signed_peers` extensions.
+- Relies on public DHT nodes supporting the extension (e.g. Mainline DHT with PR #174, there are two atm to my knowledge + all iroh-topic-tracker participants).
+- Prevents identity spoofing via Ed25519 signatures. (todo: check signature validity)
 
 ## Usage
 
@@ -41,9 +41,9 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-iroh = "1.0.0-rc.0"
-iroh-gossip = "0.99"
-iroh-topic-tracker = { git="https://github.com/rustonbsd/iroh-topic-tracker", branch="rewrite-removed-endpointhook" }
+iroh = "1.0.0-rc.1"
+iroh-gossip = "0.100"
+iroh-topic-tracker = "0.2.0-rc.0"
 ```
 
 Subscribe to a topic with automatic discovery:
@@ -55,18 +55,9 @@ use iroh::{Endpoint, SecretKey, protocol::Router};
 use iroh_gossip::net::Gossip;
 
 use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                EnvFilter::new("iroh_topic_tracker=debug,gossip_chat=debug,warn")
-            }),
-        )
-        .init();
-
     let secret_key = SecretKey::generate(&mut rand::rng());
 
     let endpoint = Endpoint::builder()
@@ -84,17 +75,16 @@ async fn main() -> anyhow::Result<()> {
     let config = TopicDiscoveryConfig::builder(endpoint)
         .max_peers_per_round(Some(5))
         .connection_timeout(Duration::from_secs(10))
-        .dht_retries(None)
         .build();
 
-    tracing::info!("Starting subscription to topic...");
+    println!("Starting subscription to topic...");
     let (sender, mut receiver, discovery_handle) = gossip
         .subscribe_with_discovery_joined(topic_id, vec![], config)
         .await?;
 
-    tracing::info!("Subscribed to topic and joined the network.");
+    println!("Subscribed to topic and joined the network.");
 
-    tracing::info!("Broadcasting hello world...");
+    println!("Broadcasting hello world...");
     sender
         .broadcast(format!("hello world {}", rand::random::<u32>()).into())
         .await?;

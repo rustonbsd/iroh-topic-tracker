@@ -108,7 +108,7 @@ impl TopicDiscoveryConfig {
             connection_timeout: Duration::from_secs(5),
             retry_interval: Duration::from_secs(300),
             max_peers_per_round: Some(5),
-            dht_retries: Some(5),
+            dht_retries: None,
         })
     }
 
