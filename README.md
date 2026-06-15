@@ -41,9 +41,9 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-iroh = "1.0.0-rc.1"
-iroh-gossip = "0.100"
-iroh-topic-tracker = "0.2.0-rc.0"
+iroh = "1"
+iroh-gossip = "0.101"
+iroh-topic-tracker = "0.2.0"
 ```
 
 Subscribe to a topic with automatic discovery:
