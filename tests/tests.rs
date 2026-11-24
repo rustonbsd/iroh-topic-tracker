@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, protocol::Router};
-use iroh_gossip::api::Event;
-use iroh_gossip::net::Gossip;
+use iroh_gossip::Event;
+use iroh_gossip::Gossip;
 use tokio::time::timeout;
 
 use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};

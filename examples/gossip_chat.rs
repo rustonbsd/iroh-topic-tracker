@@ -1,7 +1,7 @@
-use std::time::Duration;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, endpoint::presets, protocol::Router};
-use iroh_gossip::net::Gossip;
+use iroh_gossip::Gossip;
+use std::time::Duration;
 
 use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 use tracing_subscriber::EnvFilter;
@@ -57,11 +57,11 @@ async fn main() -> anyhow::Result<()> {
     println!("send hello world");
     while let Some(event) = receiver.next().await {
         match event? {
-            iroh_gossip::api::Event::Received(msg) => {
+            iroh_gossip::Event::Received(msg) => {
                 tracing::info!("Received message: {:?}", msg.content);
                 println!("Got: {:?}", msg.content);
             }
-            iroh_gossip::api::Event::NeighborUp(peer) => {
+            iroh_gossip::Event::NeighborUp(peer) => {
                 tracing::info!("Neighbor up: {}", peer.fmt_short());
                 println!("Peer joined: {}", peer.fmt_short());
             }
