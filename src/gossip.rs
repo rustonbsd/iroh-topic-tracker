@@ -11,7 +11,7 @@ use dht::async_dht::AsyncDht;
 use ed25519_dalek::SigningKey;
 use futures_lite::StreamExt;
 use iroh::{Endpoint, EndpointId};
-use iroh_gossip::api::{GossipReceiver, GossipSender};
+use iroh_gossip::{Gossip, GossipReceiver, GossipSender};
 use n0_future::time;
 use n0_watcher::Watchable;
 use sha2::Digest;
@@ -286,7 +286,7 @@ pub trait TopicDiscoveryExt {
     ) -> anyhow::Result<(GossipSender, GossipReceiver, TopicDiscoveryHandle)>;
 }
 
-impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
+impl TopicDiscoveryExt for Gossip {
     async fn subscribe_with_discovery_joined(
         &self,
         topic_id: Vec<u8>,
@@ -323,7 +323,7 @@ impl TopicDiscoveryExt for iroh_gossip::net::Gossip {
         tracing::info!("subscribe_with_discovery: subscribing to gossip topic");
         let (sender, receiver) = self
             .subscribe(
-                iroh_gossip::proto::TopicId::from_bytes(topic_bytes),
+                iroh_gossip::TopicId::from_bytes(topic_bytes),
                 bootstrap_nodes,
             )
             .await?
@@ -496,7 +496,7 @@ fn spawn_announce_task(
                     // The PUT fails with NoClosestNodes when tokens expire (5min rotation).
                     // get_signed_peers forces the DHT to issue fresh tokens for our IP I think?!
                     tracing::debug!("announce_task: refreshing tokens via get_signed_peers");
-                    let mut stream = dht.get_signed_peers(id).await;
+                    let mut stream = dht.get_signed_peers(id);
                     let _ = stream.next().await;
 
                     tokio::time::sleep(backoff).await;
@@ -643,7 +643,7 @@ async fn collect_peers_with_timeout(
     use futures_lite::StreamExt;
 
     tracing::debug!("collect_peers_with_timeout: starting peer collection");
-    let mut stream = dht.get_signed_peers(id).await;
+    let mut stream = dht.get_signed_peers(id);
     let deadline = tokio::time::Instant::now() + timeout;
     let mut valid_items = Vec::new();
     while let Ok(Some(items)) = tokio::time::timeout_at(deadline, stream.next()).await {

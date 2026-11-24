@@ -42,25 +42,24 @@ Add to `Cargo.toml`:
 ```toml
 [dependencies]
 iroh = "1"
-iroh-gossip = "0.101"
-iroh-topic-tracker = "0.2.0"
+iroh-gossip = "0.103"
+iroh-topic-tracker = "0.2.1"
 ```
 
 Subscribe to a topic with automatic discovery:
 
 ```rust
-use std::time::Duration;
-use futures_lite::StreamExt;
 use iroh::{Endpoint, SecretKey, protocol::Router};
-use iroh_gossip::net::Gossip;
+use iroh_gossip::Gossip;
+use std::time::Duration;
 
 use iroh_topic_tracker::{TopicDiscoveryConfig, TopicDiscoveryExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let secret_key = SecretKey::generate(&mut rand::rng());
+    let secret_key = SecretKey::generate();
 
-    let endpoint = Endpoint::builder()
+    let endpoint = Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret_key.clone())
         .bind()
         .await?;
@@ -78,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     println!("Starting subscription to topic...");
-    let (sender, mut receiver, discovery_handle) = gossip
+    let (sender, _receiver, discovery_handle) = gossip
         .subscribe_with_discovery_joined(topic_id, vec![], config)
         .await?;
 
@@ -89,12 +88,10 @@ async fn main() -> anyhow::Result<()> {
         .broadcast(format!("hello world {}", rand::random::<u32>()).into())
         .await?;
 
-
     discovery_handle.stop();
 
     Ok(())
 }
-
 ```
 
 ## References
